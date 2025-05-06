@@ -7,7 +7,7 @@
 
 
 
-local machine specs: \
+from workstation-class hardware:\
 OsName                                                  : Microsoft Windows 10 Home.\
 OsArchitecture                                          : 64-bit.\
 CsNumberOfLogicalProcessors                             : 8.\
@@ -22,3 +22,7 @@ CsSystemFamily                                          : MateBook.\
 CsSystemSKUNumber                                       : C178.\
 CsSystemType                                            : x64-based PC.\
 BiosName                                                : 1.20.\
+
+HPC environments:\
+
+
