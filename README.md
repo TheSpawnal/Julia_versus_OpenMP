@@ -21,8 +21,8 @@ HyperVisorPresent                                       : True.\
 CsSystemFamily                                          : MateBook.\
 CsSystemSKUNumber                                       : C178.\
 CsSystemType                                            : x64-based PC.\
-BiosName                                                : 1.20.\
+BiosName                                                : 1.20.
 
-HPC environments:\
+HPC environments:
 
 
