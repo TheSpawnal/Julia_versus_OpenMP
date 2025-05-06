@@ -17,36 +17,17 @@ This implementation includes 4 different versions:
 3. **Coarse-grained parallelism**: Divides work by assigning chunks of rows to each thread
 4. **Improved implementation**: Uses dynamic scheduling and other optimizations
 
-## Requirements
-
+## Setup
 - Windows OS
-- GCC compiler with OpenMP support (MinGW-w64 recommended)
-- Make utility (included with MinGW)
-
-## Setup for Windows
-
-1. **Install MinGW-w64**:
-   - Download and install MinGW-w64 from [https://www.mingw-w64.org/](https://www.mingw-w64.org/)
-   - Make sure to select the x86_64 architecture and posix threads
-   - Add the bin directory to your PATH environment variable
-
-2. **Verify installation**:
-   - Open a command prompt and type: `gcc --version`
-   - Make sure the version is displayed correctly
+- GCC compiler with OpenMP support MinGW-w64 
 
 ## Building the Benchmark
-
-1. Clone or download this repository
+1. Clone the repository
 2. Open a command prompt in the project directory
 3. Run the make command:
-   ```
-   make
-   ```
-
-This will compile the 2mm benchmark with OpenMP support.
+4. This will compile the 2mm benchmark with OpenMP support.
 
 ## Running the Benchmark
-
 You can run the benchmark with different configurations:
 
 ```
@@ -66,7 +47,6 @@ make benchmark
 ## Dataset Sizes
 
 The benchmark includes three dataset sizes from PolyBench/C:
-
 - **Small**: A(40×70), B(70×50), C(50×80), D(40×80)
 - **Medium**: A(180×210), B(210×190), C(190×220), D(180×220)
 - **Large**: A(800×1100), B(1100×900), C(900×1200), D(800×1200)
@@ -74,7 +54,6 @@ The benchmark includes three dataset sizes from PolyBench/C:
 ## Understanding the Output
 
 The benchmark outputs:
-
 - Matrix sizes being used
 - Number of threads
 - For each implementation:
@@ -83,7 +62,6 @@ The benchmark outputs:
   - Parallel efficiency percentage (how well the parallelism is utilized)
 
 ## Implementation Details
-
 ### Sequential (baseline)
 Original implementation with no parallelism.
 
@@ -103,7 +81,6 @@ Combines multiple optimizations:
 3. Applies chunk size tuning (16 in this case)
 
 ## Comparing with Julia Implementation
-
 This OpenMP implementation mirrors the approach taken in the Julia benchmark:
 - Sequential implementation is the baseline
 - Task-based approach in Julia corresponds to fine-grained OpenMP
@@ -113,7 +90,6 @@ This OpenMP implementation mirrors the approach taken in the Julia benchmark:
 
 
 # 2mm OpenMP Performance Analysis Guide
-
 This guide explains the performance characteristics of the different parallelization strategies implemented for the 2mm benchmark and helps you understand the benchmark results.
 
 ## Understanding Matrix Multiplication Performance
