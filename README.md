@@ -8,17 +8,17 @@
 
 
 local machine specs: \
-OsName:                                                    Microsoft Windows 10 Home.
-OsArchitecture                                          : 64-bit.
-CsNumberOfLogicalProcessors                             : 8.
-CsNumberOfProcessors                                    : 1.
-One physical CPU package on the hardware. The 8 logical processors likely come from having multiple cores and/or hyperthreading within that single physical processor.
-CsProcessors                           : {Intel(R) Core(TM) i5-10210U CPU @ 1.60GHz}.
-CsTotalPhysicalMemory                                   : 8410091520 
-total physical RAM in bytes (approximately 7.83 GB).
-CsManufacturer                                          : HUAWEI.
-HyperVisorPresent                                       : True.
-CsSystemFamily                                          : MateBook.
-CsSystemSKUNumber                                       : C178.
-CsSystemType                                            : x64-based PC.
-BiosName                                                : 1.20.
+OsName                                                  : Microsoft Windows 10 Home.\
+OsArchitecture                                          : 64-bit.\
+CsNumberOfLogicalProcessors                             : 8.\
+CsNumberOfProcessors                                    : 1.\
+One physical CPU package on the hardware. The 8 logical processors likely come from having multiple cores and/or hyperthreading within that single physical processor.\
+CsProcessors                           : {Intel(R) Core(TM) i5-10210U CPU @ 1.60GHz}.\
+CsTotalPhysicalMemory                                   : 8410091520 \
+total physical RAM in bytes (approximately 7.83 GB).\
+CsManufacturer                                          : HUAWEI.\
+HyperVisorPresent                                       : True.\
+CsSystemFamily                                          : MateBook.\
+CsSystemSKUNumber                                       : C178.\
+CsSystemType                                            : x64-based PC.\
+BiosName                                                : 1.20.\
