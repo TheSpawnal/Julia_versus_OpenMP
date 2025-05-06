@@ -18,7 +18,7 @@
 #include <C:\Users\aldej\Desktop\Julia_versus_OpenMP\polybench_utilities\polybench.h>
 
 /* Include benchmark-specific header. */
-#include "polybench_2mm.h"
+#include "C:\Users\aldej\Desktop\Julia_versus_OpenMP\local_tests\linear_algebra\kernels\2mm\polybench_2mm.h"
 
 
 /* Array initialization. */
