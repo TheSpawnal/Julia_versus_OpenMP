@@ -26,7 +26,7 @@ CsSystemSKUNumber                                       : C178.\
 CsSystemType                                            : x64-based PC.\
 BiosName                                                : 1.20.
 
-HPC environments: DAS-5 Clusters 
+HPC environments: [DAS-5 Clusters](https://www.cs.vu.nl/das5/).
 | Cluster-Node | Type        | Speed   | Memory      | Storage    | Node HDDs | Network Accelerators                                  |
 |--------------|-------------|---------|-------------|------------|-----------|-------------------------------------------------------|
 | VU68         | dual 8-core | 2.4 GHz | 64 GB       | 128 TB     | 2*4TB     | IB and GbE, 16*TitanX+Titan/GTX980/K20/K40             |
@@ -36,11 +36,11 @@ HPC environments: DAS-5 Clusters
 | UVA-MN31     | dual 8-core | 2.4 GHz | 64 GB       | 128 TB     | 2*4TB     | IB and GbE                                            |
 | ASTRON9      | dual 8/10/14-core | 2.6 GHz | 128/512 GB  | 96 TB      | 2*4TB     | IB, 40 GbE, and GbE, NVIDIA/AMD GPUs; Xeon Phi        |
 
-DAS-5 includes roughly 200 dual-eight-core compute nodes (primarily ASUS nodes with Intel E5-2630v3 CPUs), spread out over six clusters, located at five sites. The system has been built by ClusterVision. Like its predecessor, DAS-4, DAS-5 has a mostly homogeneous core.
+"DAS-5 includes roughly 200 dual-eight-core compute nodes (primarily ASUS nodes with Intel E5-2630v3 CPUs), spread out over six clusters, located at five sites. The system has been built by ClusterVision. Like its predecessor, DAS-4, DAS-5 has a mostly homogeneous core.
 However, every DAS-5 site also some special hardware extensions that focus on local research priorities.
 
 Besides using the ubiquitous Ethernet (1 Gbit/s at the compute nodes, 10 Gbit/s on the head nodes), DAS-5 also employs the high speed InfiniBand interconnect technology. FDR InfiniBand (IB) is used as an internal high-speed interconnect. To connect with the other DAS-5 clusters, a second ethernet adapter of every compute node is used that can communicate over dedicated Ethernet lightpaths by means of an OpenFlow switch at every site. These lightpaths are implemented via a fully optical (DWDM) backbone in the Netherlands, SURFnet7. See also: DAS-5 Connectivity.
 
-The operating system the DAS-5 runs is Rocky Linux. Cluster management is done using the OpenHPC cluster management suite. In addition, software from many sources is available to support research on DAS-5: the SLURM resource management system, various MPI implementations (e.g., OpenMPI and MPICH), optimizing compilers, visualization packages, performance analysis tools, etc.
+The operating system the DAS-5 runs is Rocky Linux. Cluster management is done using the OpenHPC cluster management suite. In addition, software from many sources is available to support research on DAS-5: the SLURM resource management system, various MPI implementations (e.g., OpenMPI and MPICH), optimizing compilers, visualization packages, performance analysis tools, etc."
 
 
