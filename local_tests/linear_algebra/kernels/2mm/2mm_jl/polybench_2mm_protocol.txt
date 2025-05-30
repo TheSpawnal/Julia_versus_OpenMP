@@ -1,0 +1,15 @@
+ 1.3 Linear Algebra Kernels 2MM
+ Linear algebra kernel that consists of two matrix multiplications.
+ It takes the following as inputs,
+α,β : scalars
+ A: P*Q matrix
+ B: Q*R matrix
+ C: R*S matrix
+ D: P*S matrix
+ and gives the following as output:
+ E: P*S matrix, where E = αABC+ βD
+
+
+algebra/kernels	
+double	NI NJ NK NL	16 18 22 24	40 50 70 80	180 190 210 220	800 900 1100 1200	1600 1800 2200 2400
+

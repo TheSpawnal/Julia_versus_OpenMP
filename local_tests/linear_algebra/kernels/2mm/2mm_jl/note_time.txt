@@ -1,0 +1,69 @@
+Memory allocation analysis
+One of the most common techniques to improve performance is to reduce memory allocation. Julia provides several tools to measure this:
+
+@time
+The total amount of allocation can be measured with @time, @allocated and @allocations, and specific lines triggering allocation can often be inferred from profiling via the cost of garbage collection that these lines incur. However, sometimes it is more efficient to directly measure the amount of memory allocated by each line of code.
+
+GC Logging
+While @time logs high-level stats about memory usage and garbage collection over the course of evaluating an expression, it can be useful to log each garbage collection event, to get an intuitive sense of how often the garbage collector is running, how long it's running each time, and how much garbage it collects each time. This can be enabled with GC.enable_logging(true), which causes Julia to log to stderr every time a garbage collection happens.
+
+
+Measure performance with @time and pay attention to memory allocation
+A useful tool for measuring performance is the @time macro. We here repeat the example with the global variable above, but this time with the type annotation removed:
+
+julia> x = rand(1000);
+
+julia> function sum_global()
+           s = 0.0
+           for i in x
+               s += i
+           end
+           return s
+       end;
+
+julia> @time sum_global()
+  0.011539 seconds (9.08 k allocations: 373.386 KiB, 98.69% compilation time)
+523.0007221951678
+
+julia> @time sum_global()
+  0.000091 seconds (3.49 k allocations: 70.156 KiB)
+523.0007221951678
+
+On the first call (@time sum_global()) the function gets compiled. (If you've not yet used @time in this session, it will also compile functions needed for timing.) You should not take the results of this run seriously. For the second run, note that in addition to reporting the time, it also indicated that a significant amount of memory was allocated. We are here just computing a sum over all elements in a vector of 64-bit floats so there should be no need to allocate (heap) memory.
+
+We should clarify that what @time reports is specifically heap allocations, which are typically needed for either mutable objects or for creating/growing variable-sized containers (such as Array or Dict, strings, or "type-unstable" objects whose type is only known at runtime). Allocating (or deallocating) such blocks of memory may require an expensive function call to libc (e.g. via malloc in C), and they must be tracked for garbage collection. In contrast, immutable values like numbers (except bignums), tuples, and immutable structs can be stored much more cheaply, e.g. in stack or CPU-register memory, so one doesn’t typically worry about the performance cost of "allocating" them.
+
+Unexpected memory allocation is almost always a sign of some problem with your code, usually a problem with type-stability or creating many small temporary arrays. Consequently, in addition to the allocation itself, it's very likely that the code generated for your function is far from optimal. Take such indications seriously and follow the advice below.
+
+In this particular case, the memory allocation is due to the usage of a type-unstable global variable x, so if we instead pass x as an argument to the function it no longer allocates memory (the remaining allocation reported below is due to running the @time macro in global scope) and is significantly faster after the first call:
+
+julia> x = rand(1000);
+
+julia> function sum_arg(x)
+           s = 0.0
+           for i in x
+               s += i
+           end
+           return s
+       end;
+
+julia> @time sum_arg(x)
+  0.007551 seconds (3.98 k allocations: 200.548 KiB, 99.77% compilation time)
+523.0007221951678
+
+julia> @time sum_arg(x)
+  0.000006 seconds (1 allocation: 16 bytes)
+523.0007221951678
+
+The 1 allocation seen is from running the @time macro itself in global scope. If we instead run the timing in a function, we can see that indeed no allocations are performed:
+
+julia> time_sum(x) = @time sum_arg(x);
+
+julia> time_sum(x)
+  0.000002 seconds
+523.0007221951678
+
+In some situations, your function may need to allocate memory as part of its operation, and this can complicate the simple picture above. In such cases, consider using one of the tools below to diagnose problems, or write a version of your function that separates allocation from its algorithmic aspects (see Pre-allocating outputs).
+
+Note
+For more serious benchmarking, consider the BenchmarkTools.jl package which among other things evaluates the function multiple times in order to reduce noise.

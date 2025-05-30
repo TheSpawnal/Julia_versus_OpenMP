@@ -1,0 +1,103 @@
+@code_warntype
+The macro @code_warntype (or its function variant code_warntype) can sometimes be helpful in diagnosing type-related problems. Here's an example:
+
+julia> @noinline pos(x) = x < 0 ? 0 : x;
+
+julia> function f(x)
+           y = pos(x)
+           return sin(y*x + 1)
+       end;
+
+julia> @code_warntype f(3.2)
+MethodInstance for f(::Float64)
+  from f(x) @ Main REPL[9]:1
+Arguments
+  #self#::Core.Const(f)
+  x::Float64
+Locals
+  y::Union{Float64, Int64}
+Body::Float64
+1 ─      (y = Main.pos(x))
+│   %2 = (y * x)::Float64
+│   %3 = (%2 + 1)::Float64
+│   %4 = Main.sin(%3)::Float64
+└──      return %4
+
+Interpreting the output of @code_warntype, like that of its cousins @code_lowered, @code_typed, @code_llvm, and @code_native, takes a little practice. Your code is being presented in form that has been heavily digested on its way to generating compiled machine code. Most of the expressions are annotated by a type, indicated by the ::T (where T might be Float64, for example). The most important characteristic of @code_warntype is that non-concrete types are displayed in red; since this document is written in Markdown, which has no color, in this document, red text is denoted by uppercase.
+
+At the top, the inferred return type of the function is shown as Body::Float64. The next lines represent the body of f in Julia's SSA IR form. The numbered boxes are labels and represent targets for jumps (via goto) in your code. Looking at the body, you can see that the first thing that happens is that pos is called and the return value has been inferred as the Union type Union{Float64, Int64} shown in uppercase since it is a non-concrete type. This means that we cannot know the exact return type of pos based on the input types. However, the result of y*xis a Float64 no matter if y is a Float64 or Int64 The net result is that f(x::Float64) will not be type-unstable in its output, even if some of the intermediate computations are type-unstable.
+
+How you use this information is up to you. Obviously, it would be far and away best to fix pos to be type-stable: if you did so, all of the variables in f would be concrete, and its performance would be optimal. However, there are circumstances where this kind of ephemeral type instability might not matter too much: for example, if pos is never used in isolation, the fact that f's output is type-stable (for Float64 inputs) will shield later code from the propagating effects of type instability. This is particularly relevant in cases where fixing the type instability is difficult or impossible. In such cases, the tips above (e.g., adding type annotations and/or breaking up functions) are your best tools to contain the "damage" from type instability. Also, note that even Julia Base has functions that are type unstable. For example, the function findfirst returns the index into an array where a key is found, or nothing if it is not found, a clear type instability. In order to make it easier to find the type instabilities that are likely to be important, Unions containing either missing or nothing are color highlighted in yellow, instead of red.
+
+The following examples may help you interpret expressions marked as containing non-leaf types:
+
+Function body starting with Body::Union{T1,T2})
+
+Interpretation: function with unstable return type
+Suggestion: make the return value type-stable, even if you have to annotate it
+invoke Main.g(%%x::Int64)::Union{Float64, Int64}
+
+Interpretation: call to a type-unstable function g.
+Suggestion: fix the function, or if necessary annotate the return value
+invoke Base.getindex(%%x::Array{Any,1}, 1::Int64)::Any
+
+Interpretation: accessing elements of poorly-typed arrays
+Suggestion: use arrays with better-defined types, or if necessary annotate the type of individual element accesses
+Base.getfield(%%x, :(:data))::Array{Float64,N} where N
+
+Interpretation: getting a field that is of non-leaf type. In this case, the type of x, say ArrayContainer, had a field data::Array{T}. But Array needs the dimension N, too, to be a concrete type.
+Suggestion: use concrete types like Array{T,3} or Array{T,N}, where N is now a parameter of ArrayContainer
+Performance of captured variable
+Consider the following example that defines an inner function:
+
+function abmult(r::Int)
+    if r < 0
+        r = -r
+    end
+    f = x -> x * r
+    return f
+end
+
+Function abmult returns a function f that multiplies its argument by the absolute value of r. The inner function assigned to f is called a "closure". Inner functions are also used by the language for do-blocks and for generator expressions.
+
+This style of code presents performance challenges for the language. The parser, when translating it into lower-level instructions, substantially reorganizes the above code by extracting the inner function to a separate code block. "Captured" variables such as r that are shared by inner functions and their enclosing scope are also extracted into a heap-allocated "box" accessible to both inner and outer functions because the language specifies that r in the inner scope must be identical to r in the outer scope even after the outer scope (or another inner function) modifies r.
+
+The discussion in the preceding paragraph referred to the "parser", that is, the phase of compilation that takes place when the module containing abmult is first loaded, as opposed to the later phase when it is first invoked. The parser does not "know" that Int is a fixed type, or that the statement r = -r transforms an Int to another Int. The magic of type inference takes place in the later phase of compilation.
+
+Thus, the parser does not know that r has a fixed type (Int). nor that r does not change value once the inner function is created (so that the box is unneeded). Therefore, the parser emits code for box that holds an object with an abstract type such as Any, which requires run-time type dispatch for each occurrence of r. This can be verified by applying @code_warntype to the above function. Both the boxing and the run-time type dispatch can cause loss of performance.
+
+If captured variables are used in a performance-critical section of the code, then the following tips help ensure that their use is performant. First, if it is known that a captured variable does not change its type, then this can be declared explicitly with a type annotation (on the variable, not the right-hand side):
+
+function abmult2(r0::Int)
+    r::Int = r0
+    if r < 0
+        r = -r
+    end
+    f = x -> x * r
+    return f
+end
+
+The type annotation partially recovers lost performance due to capturing because the parser can associate a concrete type to the object in the box. Going further, if the captured variable does not need to be boxed at all (because it will not be reassigned after the closure is created), this can be indicated with let blocks as follows.
+
+function abmult3(r::Int)
+    if r < 0
+        r = -r
+    end
+    f = let r = r
+            x -> x * r
+    end
+    return f
+end
+
+The let block creates a new variable r whose scope is only the inner function. The second technique recovers full language performance in the presence of captured variables. Note that this is a rapidly evolving aspect of the compiler, and it is likely that future releases will not require this degree of programmer annotation to attain performance. In the mean time, some user-contributed packages like FastClosures automate the insertion of let statements as in abmult3.
+
+Multithreading and linear algebra
+This section applies to multithreaded Julia code which, in each thread, performs linear algebra operations. Indeed, these linear algebra operations involve BLAS / LAPACK calls, which are themselves multithreaded. In this case, one must ensure that cores aren't oversubscribed due to the two different types of multithreading.
+
+Julia compiles and uses its own copy of OpenBLAS for linear algebra, whose number of threads is controlled by the environment variable OPENBLAS_NUM_THREADS. It can either be set as a command line option when launching Julia, or modified during the Julia session with BLAS.set_num_threads(N) (the submodule BLAS is exported by using LinearAlgebra). Its current value can be accessed with BLAS.get_num_threads().
+
+When the user does not specify anything, Julia tries to choose a reasonable value for the number of OpenBLAS threads (e.g. based on the platform, the Julia version, etc.). However, it is generally recommended to check and set the value manually. The OpenBLAS behavior is as follows:
+
+If OPENBLAS_NUM_THREADS=1, OpenBLAS uses the calling Julia thread(s), i.e. it "lives in" the Julia thread that runs the computation.
+If OPENBLAS_NUM_THREADS=N>1, OpenBLAS creates and manages its own pool of threads (N in total). There is just one OpenBLAS thread pool shared among all Julia threads.
+When you start Julia in multithreaded mode with JULIA_NUM_THREADS=X, it is generally recommended to set OPENBLAS_NUM_THREADS=1. Given the behavior described above, increasing the number of BLAS threads to N>1 can very easily lead to worse performance, in particular when N<<X. However this is just a rule of thumb, and the best way to set each number of threads is to experiment on your specific application.
