@@ -60,3 +60,16 @@
 # threads       |     0.000045 |      0.000048 |        0.000048 |       0.05
 # blas          |     0.000015 |      0.000016 |        0.000016 |       0.05
 # polly         |     0.000010 |      0.000011 |        0.000011 |       0.05
+
+Improvement: 
+# Run all implementations on default datasets
+PolyBench2MM.main()
+
+# Run specific implementation on specific datasets
+PolyBench2MM.main(implementation="blas", datasets=["SMALL", "LARGE"])
+
+# Run distributed implementations
+PolyBench2MM.main(implementation="dist3", distributed=true, datasets=["SMALL"])
+
+# Verify correctness with custom tolerance
+PolyBench2MM.verify_implementations("MEDIUM", tolerance=1e-2)
