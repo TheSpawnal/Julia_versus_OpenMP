@@ -448,7 +448,7 @@ function benchmark_all_implementations(dataset_name, distributed=false)
         println("-"^60)
         
         # Test distributed implementation
-        if dataset_name in ["MINI", "SMALL", "MEDIUM"]
+        if dataset_name in ["MINI", "SMALL", "MEDIUM","LARGE"]
             optimal_procs, best_time = find_optimal_procs(ni, nj, nk, nl, 
                                                          kernel_2mm_distributed, 
                                                          "distributed", 
@@ -462,7 +462,7 @@ function benchmark_all_implementations(dataset_name, distributed=false)
         
         # Test dist3 implementation
         if mod(ni, nworkers()) == 0
-            if dataset_name in ["MINI", "SMALL", "MEDIUM"]
+            if dataset_name in ["MINI", "SMALL", "MEDIUM","LARGE"]
                 optimal_procs, best_time = find_optimal_procs(ni, nj, nk, nl, 
                                                              kernel_2mm_dist3, 
                                                              "dist3", 
