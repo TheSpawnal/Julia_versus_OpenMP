@@ -12,7 +12,6 @@
 # julia> PolyBench2MM.main(implementation="seq")
 # julia> PolyBench2MM.main(implementation="simd")
 # julia> PolyBench2MM.main(implementation="threads")
-# julia> PolyBench2MM.main(implementation="polly")
 
 # 3. Run with custom datasets (default is MINI, SMALL, MEDIUM)
 # julia> PolyBench2MM.main(datasets=["SMALL", "MEDIUM", "LARGE"])
@@ -46,30 +45,3 @@
 
 # Or start Julia with thread count:
 # $ julia --threads 8
-
-# ===== EXAMPLE OUTPUT =====
-# PolyBench 2MM Benchmark
-# ============================================================
-# Dataset: MINI (ni=16, nj=18, nk=22, nl=24)
-# ============================================================
-# 
-# Implementation | Min Time (s) | Mean Time (s) | Median Time (s) | Memory (MB)
-# --------------|--------------|---------------|-----------------|------------
-# seq           |     0.000012 |      0.000013 |        0.000013 |       0.05
-# simd          |     0.000008 |      0.000009 |        0.000009 |       0.05
-# threads       |     0.000045 |      0.000048 |        0.000048 |       0.05
-# blas          |     0.000015 |      0.000016 |        0.000016 |       0.05
-# polly         |     0.000010 |      0.000011 |        0.000011 |       0.05
-
-Improvement: 
-# Run all implementations on default datasets
-PolyBench2MM.main()
-
-# Run specific implementation on specific datasets
-PolyBench2MM.main(implementation="blas", datasets=["SMALL", "LARGE"])
-
-# Run distributed implementations
-PolyBench2MM.main(implementation="dist3", distributed=true, datasets=["SMALL"])
-
-# Verify correctness with custom tolerance
-PolyBench2MM.verify_implementations("MEDIUM", tolerance=1e-2)

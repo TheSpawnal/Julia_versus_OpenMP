@@ -1,0 +1,40 @@
+
+# benchmark_distributed.job - Distributed implementations only
+#!/bin/bash  
+#SBATCH --job-name=polybench_2mm_distributed
+#SBATCH --time=01:30:00
+#SBATCH --nodes=4
+#SBATCH --ntasks-per-node=8
+#SBATCH --partition=defq
+#SBATCH --constraint=cpunode
+#SBATCH --output=polybench_distributed_%j.out
+#SBATCH --error=polybench_distributed_%j.err
+
+. /etc/bashrc
+. /etc/profile.d/lmod.sh
+
+cd $HOME/Julia_vs_OpenMP_PolyBench
+
+echo "=== PolyBench 2MM Distributed Implementations ==="
+echo "Job ID: $SLURM_JOB_ID"
+echo "Nodes: $SLURM_JOB_NUM_NODES"
+echo "Tasks per node: $SLURM_NTASKS_PER_NODE"
+echo "Date: $(date)"
+
+# Ensure Julia is available
+if ! command -v julia &> /dev/null; then
+    cd $HOME
+    wget -q https://julialang-s3.julialang.org/bin/linux/x64/1.9/julia-1.9.3-linux-x86_64.tar.gz
+    tar -xzf julia-1.9.3-linux-x86_64.tar.gz
+    export PATH=$HOME/julia-1.9.3/bin:$PATH
+    cd $HOME/Julia_vs_OpenMP_PolyBench
+fi
+
+julia --project=. -e "
+using Distributed;
+addprocs(8);
+@everywhere include(\"PolyBench2MM.jl\");
+@everywhere using .PolyBench2MM;
+println(\"Workers: \$(nworkers())\");
+PolyBench2MM.main(distributed=true, datasets=[\"SMALL\", \"MEDIUM\", \"LARGE\"]);
+"

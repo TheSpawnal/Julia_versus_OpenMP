@@ -1,0 +1,27 @@
+
+#!/bin/bash
+#SBATCH --job-name=polybench_2mm_test
+#SBATCH --time=00:05:00
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=1
+#SBATCH --partition=defq
+#SBATCH --constraint=cpunode
+#SBATCH --output=polybench_test_%j.out
+#SBATCH --error=polybench_test_%j.err
+
+. /etc/bashrc
+. /etc/profile.d/lmod.sh
+
+export JULIA_NUM_THREADS=4
+cd $HOME/Julia_vs_OpenMP_PolyBench
+
+echo "=== PolyBench 2MM Quick Test ==="
+echo "Testing environment before main benchmark..."
+
+julia --project=. -e "
+include(\"PolyBench2MM.jl\");
+using .PolyBench2MM;
+println(\"Quick test with MINI dataset...\");
+PolyBench2MM.main(datasets=[\"MINI\"]);
+println(\"Test completed successfully!\");
+"

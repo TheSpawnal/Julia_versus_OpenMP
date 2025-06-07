@@ -1,0 +1,39 @@
+# benchmark_standard.job - Standard implementations only
+#!/bin/bash
+#SBATCH --job-name=polybench_2mm_standard
+#SBATCH --time=01:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=16
+#SBATCH --partition=defq
+#SBATCH --constraint=cpunode
+#SBATCH --output=polybench_standard_%j.out
+#SBATCH --error=polybench_standard_%j.err
+
+. /etc/bashrc
+. /etc/profile.d/lmod.sh
+
+export JULIA_NUM_THREADS=16
+cd $HOME/Julia_vs_OpenMP_PolyBench
+
+echo "=== PolyBench 2MM Standard Implementations ==="
+echo "Job ID: $SLURM_JOB_ID"
+echo "Node: $SLURMD_NODENAME"
+echo "Threads: $JULIA_NUM_THREADS"
+echo "Date: $(date)"
+
+# Ensure Julia is available
+if ! command -v julia &> /dev/null; then
+    cd $HOME
+    wget -q https://julialang-s3.julialang.org/bin/linux/x64/1.9/julia-1.9.3-linux-x86_64.tar.gz
+    tar -xzf julia-1.9.3-linux-x86_64.tar.gz
+    export PATH=$HOME/julia-1.9.3/bin:$PATH
+    cd $HOME/Julia_vs_OpenMP_PolyBench
+fi
+
+julia --project=. -e "
+include(\"PolyBench2MM.jl\");
+using .PolyBench2MM;
+PolyBench2MM.main(datasets=[\"SMALL\", \"MEDIUM\", \"LARGE\"]);
+PolyBench2MM.verify_implementations(\"MEDIUM\");
+"

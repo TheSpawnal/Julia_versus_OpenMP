@@ -1,0 +1,71 @@
+#!/bin/bash
+#SBATCH --job-name=polybench_2mm_comprehensive
+#SBATCH --time=00:10:00
+#SBATCH --nodes=4
+#SBATCH --ntasks-per-node=16
+#SBATCH --partition=defq
+#SBATCH --constraint=cpunode
+#SBATCH --output=polybench_2mm_%j.out
+#SBATCH --error=polybench_2mm_%j.err
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --begin=13:15
+
+# Load environment
+. /etc/bashrc
+. /etc/profile.d/lmod.sh
+
+# Set thread count for multithreaded implementation  
+export JULIA_NUM_THREADS=9
+
+# Navigate to project directory
+cd $HOME/Julia_vs_OpenMP_PolyBench
+
+echo "=== PolyBench 2MM Comprehensive Benchmark ==="
+echo "Job ID: $SLURM_JOB_ID"
+echo "Node: $SLURMD_NODENAME" 
+echo "Threads: $JULIA_NUM_THREADS"
+echo "Date: $(date)"
+echo "Available memory: $(free -h | head -2)"
+echo "CPU info: $(lscpu | grep 'Model name')"
+echo "=========================================="
+
+# Run comprehensive benchmark
+julia --project=. << 'EOF'
+println("Starting PolyBench 2MM benchmark suite...")
+
+include("PolyBench2MM.jl")
+using .PolyBench2MM
+using Distributed
+addprocs(4)
+@everywhere include("PolyBench2MM.jl")
+@everywhere using .PolyBench2MM
+PolyBench2MM.main(distributed=true)
+
+
+EOF
+
+echo "Job completed at: $(date)"
+
+# # Run all standard implementations
+# println("\n=== PHASE 1: Standard Implementations ===")
+# PolyBench2MM.main(datasets=["MINI", "SMALL", "MEDIUM", "LARGE"])
+
+# # Verify correctness
+# println("\n=== PHASE 2: Correctness Verification ===")
+# verification_results = PolyBench2MM.verify_implementations("MEDIUM")
+
+# # Add workers for distributed testing
+# using Distributed
+# println("\n=== PHASE 3: Adding Workers for Distributed Computing ===")
+# addprocs(4)
+# @everywhere include("PolyBench2MM.jl")
+# @everywhere using .PolyBench2MM
+
+# println("Workers added: $(nworkers()) workers available")
+
+# # Run distributed implementations  
+# println("\n=== PHASE 4: Distributed Implementations ===")
+# PolyBench2MM.main(distributed=true, datasets=["SMALL", "MEDIUM", "LARGE"])
+
+# println("\n=== BENCHMARK COMPLETE ===")
+# println("Timestamp: $(now())")
