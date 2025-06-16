@@ -16,7 +16,7 @@
 #include <assert.h>
 #include <time.h>
 #include <sys/time.h>
-#include <windows.h>
+#include <sys/resource.h>
 #include <sched.h>
 #include <math.h>
 #ifdef _OPENMP

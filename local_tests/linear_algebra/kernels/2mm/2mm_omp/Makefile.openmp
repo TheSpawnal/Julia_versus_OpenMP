@@ -1,0 +1,63 @@
+# Vectorization report targets
+vec-report: $(SOURCES)
+	$(CC) $(ALL_CFLAGS) $(REPORT_FLAGS) $^ -c
+
+# Profile-guided optimization
+pgo-gen: $(SOURCES)
+	$(CC) $(ALL_CFLAGS) -fprofile-generate $^ -o 2mm_pgo_gen -lm
+	./2mm_pgo_gen
+	
+pgo-use: $(SOURCES)
+	$(CC) $(ALL_CFLAGS) -fprofile-use $^ -o 2mm_pgo -lm
+
+# Benchmark all implementations
+benchmark: all
+	@echo "Benchmarking all implementations with $(DATASET)"
+	@echo "Sequential Optimized:" && ./2mm_seq
+	@echo "OpenMP Static:" && ./2mm_omp_static
+	@echo "OpenMP Tiled:" && ./2mm_omp_tiled
+	@echo "OpenMP Tasks:" && ./2mm_omp_tasks
+	@echo "OpenMP NUMA:" && ./2mm_omp_numa || echo "NUMA not available"
+	@echo "OpenMP Hybrid:" && ./2mm_omp_hybrid
+
+# MPI benchmark
+mpi-benchmark: mpi
+	@echo "MPI-only (4 processes):" && mpirun -np 4 ./2mm_mpi
+	@echo "MPI+OpenMP (4 processes, 2 threads each):" && OMP_NUM_THREADS=2 mpirun -np 4 ./2mm_mpi_openmp_hybrid
+
+# Thread scaling test
+thread-scaling: 2mm_omp_tiled
+	@echo "Thread scaling test for $(DATASET)"
+	@for t in 1 2 4 8 16 32; do \
+		echo "Threads: $$t"; \
+		OMP_NUM_THREADS=$$t ./2mm_omp_tiled; \
+	done
+
+# MPI scaling test
+mpi-scaling: 2mm_mpi
+	@echo "MPI scaling test for $(DATASET)"
+	@for p in 1 2 4 8 16; do \
+		echo "Processes: $$p"; \
+		mpirun -np $$p ./2mm_mpi; \
+	done
+
+# Clean
+clean:
+	rm -f $(TARGETS) $(MPI_TARGETS) *.o *.gcda *.gcno
+
+# Help
+help:
+	@echo "Available targets:"
+	@echo "  all          - Build all OpenMP implementations"
+	@echo "  mpi          - Build MPI implementations"
+	@echo "  benchmark    - Run all OpenMP implementations"
+	@echo "  mpi-benchmark - Run MPI implementations"
+	@echo "  thread-scaling - Test OpenMP thread scaling"
+	@echo "  mpi-scaling  - Test MPI process scaling"
+	@echo "  vec-report   - Generate vectorization reports"
+	@echo "  clean        - Remove built files"
+	@echo ""
+	@echo "Dataset sizes: MINI_DATASET, SMALL_DATASET, MEDIUM_DATASET, LARGE_DATASET, EXTRALARGE_DATASET"
+	@echo "Usage: make DATASET=LARGE_DATASET CC=gcc benchmark"
+
+.PHONY: all mpi clean benchmark mpi-benchmark thread-scaling mpi-scaling vec-report help pgo-gen pgo-use

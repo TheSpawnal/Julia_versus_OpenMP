@@ -1,0 +1,8 @@
+{
+	"folders": [
+		{
+			"path": "local_tests/linear_algebra/kernels/2mm/2mm_jl"
+		}
+	],
+	"settings": {}
+}

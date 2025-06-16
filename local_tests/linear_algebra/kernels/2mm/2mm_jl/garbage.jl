@@ -1,4 +1,4 @@
-    module PolyBench2MM
+module PolyBench2MM
 # PolyBench 2MM Benchmark suite for Julia
 # 
 # This module implements the 2mm kernel from PolyBench in various optimized forms
