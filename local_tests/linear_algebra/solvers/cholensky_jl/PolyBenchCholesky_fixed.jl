@@ -78,12 +78,11 @@ const DATASET_SIZES = Dict(
     "EXTRALARGE" => 4000
 )
 
-# FIXED: Initialize matrix following PolyBench specification
 # This creates a SYMMETRIC positive-definite matrix
 function init_array!(A)
     n = size(A, 1)
     
-    # First, create initial matrix (lower triangular + diagonal)
+    # initial matrix (lower triangular + diagonal)
     @inbounds for j = 1:n
         for i = j:n
             if i == j
@@ -94,7 +93,7 @@ function init_array!(A)
         end
     end
     
-    # Make symmetric (CRITICAL FIX)
+    #symmetric
     @inbounds for j = 1:n
         for i = 1:(j-1)
             A[i,j] = A[j,i]
@@ -104,8 +103,7 @@ function init_array!(A)
     # Make positive definite: A = B*B^T where B is the original A
     B = similar(A)
     copyto!(B, A)  # Use copyto! to avoid allocation
-    
-    # Compute A = B * B^T (ensures positive definiteness)
+    #compute A = B * B^T (ensures positive definiteness)
     # Using column-major friendly loop order
     fill!(A, 0.0)  # In-place fill
     @inbounds for k = 1:n
@@ -446,7 +444,7 @@ function kernel_cholesky_rightlooking!(A)
     return A
 end
 
-# 6. Column-wise Distributed Implementation (Julia column-major optimized)
+# Distributed Implementation
 function kernel_cholesky_distributed!(A)
     n = size(A, 1)
     nw = nworkers()
@@ -510,7 +508,7 @@ function kernel_cholesky_distributed!(A)
     
     return A
 end
-# 7. SharedArray Implementation (for multi-process)
+#  SharedArray Implementation (for multi-process)
 function kernel_cholesky_shared(n)
     if nworkers() <= 1
         @warn "SharedArray requires multiple workers. Use addprocs(n) first."
@@ -565,7 +563,7 @@ function kernel_cholesky_shared(n)
     return sdata(A)
 end
 
-#8/left-looking parallel cholesky(better for cache ??)
+#left-looking parallel cholesky(better for cache ??)
 function kernel_cholesky_leftlooking_parallel!(A)
     n = size(A, 1)
     
