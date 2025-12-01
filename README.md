@@ -1,11 +1,11 @@
 # Julia_versus_OpenMP
--A comprehensive evaluation of Julia's parallel programming approaches in comparison to C/OpenMP, under [PolyBench/C](https://www.cs.colostate.edu/~pouchet/software/polybench/), the Polyhedral Benchmark suite;\
+-An evaluation of Julia's parallel programming approaches in comparison to C/OpenMP, under [PolyBench/C](https://www.cs.colostate.edu/~pouchet/software/polybench/), the Polyhedral Benchmark suite;\
 -Empirical data on performance characteristics across different computational patterns:\
  • Linear Algebra Kernels: 2mm, 3mm (matrix multiplications)\
  • Linear Algebra Solvers: cholesky (decomposition)\
  • Stencil Computations: jacobi-2D (stencil computation)\
  • Data Mining: correlation, covariance\
- • Medley:nussinov\
+ • Medley: nussinov\
 -Guidelines for selecting optimal parallelization strategies based on problem characteristics(Polybench);\
 -Insights into scaling behavior from workstation-class hardware to HPC environments;\
 -Identification of potential improvements for Julia's parallel computing ecosystem;\
@@ -36,6 +36,7 @@ However, every DAS-5 site also some special hardware extensions that focus on lo
 Besides using the ubiquitous Ethernet (1 Gbit/s at the compute nodes, 10 Gbit/s on the head nodes), DAS-5 also employs the high speed InfiniBand interconnect technology. FDR InfiniBand (IB) is used as an internal high-speed interconnect. To connect with the other DAS-5 clusters, a second ethernet adapter of every compute node is used that can communicate over dedicated Ethernet lightpaths by means of an OpenFlow switch at every site. These lightpaths are implemented via a fully optical (DWDM) backbone in the Netherlands, SURFnet7. See also: DAS-5 Connectivity.
 
 The operating system the DAS-5 runs is Rocky Linux. Cluster management is done using the OpenHPC cluster management suite. In addition, software from many sources is available to support research on DAS-5: the SLURM resource management system, various MPI implementations (e.g., OpenMPI and MPICH), optimizing compilers, visualization packages, performance analysis tools, etc."
+
 
 
 
