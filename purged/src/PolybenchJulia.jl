@@ -11,6 +11,7 @@ include("kernels/ThreeMM.jl")
 include("kernels/Cholesky.jl")
 include("kernels/Correlation.jl")
 include("kernels/Nussinov.jl")
+include("kernels/Jacobi2D.jl")
 
 # Re-export modules
 using .Config
@@ -21,9 +22,10 @@ using .ThreeMM
 using .Cholesky
 using .Correlation
 using .Nussinov
+using .Jacobi2D
 
 export Config, Metrics, BenchCore
-export TwoMM, ThreeMM, Cholesky, Correlation, Nussinov
+export TwoMM, ThreeMM, Cholesky, Correlation, Nussinov, Jacobi2D
 
 # Export commonly used functions
 export configure_environment, check_configuration, print_system_info
