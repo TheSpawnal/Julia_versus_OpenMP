@@ -1,6 +1,6 @@
 module Config
 
-export DATASETS_2MM, DATASETS_3MM, DATASETS_CHOLESKY, DATASETS_CORRELATION, DATASETS_NUSSINOV
+export DATASETS_2MM, DATASETS_3MM, DATASETS_CHOLESKY, DATASETS_CORRELATION, DATASETS_NUSSINOV, DATASETS_JACOBI2D
 export DatasetConfig, get_dataset
 
 struct DatasetConfig{T}
@@ -57,6 +57,15 @@ const DATASETS_NUSSINOV = Dict{String, NamedTuple{(:n,), Tuple{Int}}}(
     "EXTRALARGE" => (n=5500,)
 )
 
+# Jacobi-2D: Grid size N x N, TSTEPS iterations
+const DATASETS_JACOBI2D = Dict{String, NamedTuple{(:n, :tsteps), Tuple{Int, Int}}}(
+    "MINI"       => (n=30,    tsteps=20),
+    "SMALL"      => (n=90,    tsteps=40),
+    "MEDIUM"     => (n=250,   tsteps=100),
+    "LARGE"      => (n=1300,  tsteps=500),
+    "EXTRALARGE" => (n=2800,  tsteps=1000)
+)
+
 # FLOP calculations
 function flops_2mm(ni, nj, nk, nl)
     # tmp = alpha * A * B: 2*ni*nj*nk
@@ -86,6 +95,14 @@ function flops_nussinov(n)
     return n^3
 end
 
+function flops_jacobi2d(n, tsteps)
+    # Per point: 4 additions + 1 multiplication = 5 FLOPs (or 6 if counting center add)
+    # Interior points: (n-2)^2
+    # Per timestep: 6 * (n-2)^2
+    # Total: 6 * (n-2)^2 * tsteps
+    return 6 * (n - 2)^2 * tsteps
+end
+
 # Memory estimation (bytes)
 function memory_2mm(ni, nj, nk, nl; T=Float64)
     sizeof(T) * (ni * nk + nk * nj + ni * nj + nj * nl + ni * nl)
@@ -105,6 +122,11 @@ end
 
 function memory_nussinov(n)
     sizeof(Int) * n * n + n  # table + sequence
+end
+
+function memory_jacobi2d(n; T=Float64)
+    # Two grids: A and B, each n x n
+    2 * sizeof(T) * n * n
 end
 
 end # module
