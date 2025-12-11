@@ -17,6 +17,7 @@ using PolyBenchJulia.ThreeMM
 using PolyBenchJulia.Cholesky
 using PolyBenchJulia.Correlation
 using PolyBenchJulia.Nussinov
+using PolyBenchJulia.Jacobi2D
 
 const TEST_DATASET = "SMALL"
 const TOLERANCE = 1e-10
@@ -196,6 +197,42 @@ const TOLERANCE = 1e-10
                     end
                 end
                 @test all_match
+            end
+        end
+    end
+    
+    @testset "Jacobi2D Kernel" begin
+        params = DATASETS_JACOBI2D[TEST_DATASET]
+        n = params.n
+        tsteps = params.tsteps
+        
+        A = Matrix{Float64}(undef, n, n)
+        B = Matrix{Float64}(undef, n, n)
+        A_orig = Matrix{Float64}(undef, n, n)
+        
+        init_jacobi2d!(A, B)
+        copyto!(A_orig, A)
+        
+        # Reference
+        A_ref = copy(A_orig)
+        B_ref = copy(A_orig)
+        kernel_jacobi2d_seq!(A_ref, B_ref, tsteps)
+        
+        for strategy in STRATEGIES_JACOBI2D
+            @testset "$strategy" begin
+                kernel_fn = Jacobi2D.get_kernel(strategy)
+                
+                copyto!(A, A_orig)
+                copyto!(B, A_orig)
+                kernel_fn(A, B, tsteps)
+                
+                # Check interior points
+                max_diff = 0.0
+                for j in 2:(n-1), i in 2:(n-1)
+                    max_diff = max(max_diff, abs(A[i, j] - A_ref[i, j]))
+                end
+                
+                @test max_diff < 1e-10
             end
         end
     end
