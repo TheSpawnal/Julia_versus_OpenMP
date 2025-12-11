@@ -1,6 +1,6 @@
 # Julia PolyBench Suite
 
-State-of-the-art Julia implementations of 5 PolyBench kernels designed for systematic performance evaluation against OpenMP/C.
+State-of-the-art Julia implementations of 6 PolyBench kernels designed for systematic performance evaluation against OpenMP/C.
 
 ## Benchmarks
 
@@ -10,6 +10,7 @@ State-of-the-art Julia implementations of 5 PolyBench kernels designed for syste
 | **3MM** | E=A*B; F=C*D; G=E*F | High arithmetic intensity | High |
 | **Cholesky** | A = L*L^T decomposition | Dependency-heavy, triangular | Medium |
 | **Correlation** | Pearson correlation matrix | Streaming, reductions | High |
+| **Jacobi-2D** | 5-point stencil iteration | Memory-bound, low arithmetic intensity | High |
 | **Nussinov** | RNA folding DP | Wavefront, irregular | Limited |
 
 ## Project Structure
@@ -29,12 +30,14 @@ julia_polybench/
 │       ├── ThreeMM.jl          # 3MM implementations
 │       ├── Cholesky.jl         # Cholesky implementations
 │       ├── Correlation.jl      # Correlation implementations
+│       ├── Jacobi2D.jl         # Jacobi-2D stencil implementations
 │       └── Nussinov.jl         # Nussinov implementations
 ├── scripts/
 │   ├── run_2mm.jl
 │   ├── run_3mm.jl
 │   ├── run_cholesky.jl
 │   ├── run_correlation.jl
+│   ├── run_jacobi2d.jl
 │   └── run_nussinov.jl
 ├── test/
 │   └── runtests.jl
@@ -198,6 +201,13 @@ julia -t 32 scripts/run_2mm.jl --dataset LARGE --output csv
 4. Tiled with cache blocking
 5. Reduction-based parallel
 
+### Jacobi-2D (Stencil)
+1. Sequential baseline (double buffering)
+2. Threaded row-wise parallel
+3. Red-black (Gauss-Seidel) ordering
+4. Tiled/blocked for cache optimization
+5. Wavefront parallelization
+
 ### Nussinov (DP Wavefront)
 1. Sequential baseline
 2. Wavefront/anti-diagonal parallel
@@ -218,6 +228,3 @@ All implementations are verified against:
 julia test/runtests.jl
 ```
 
-## License
-
-MIT License - Academic use encouraged.
