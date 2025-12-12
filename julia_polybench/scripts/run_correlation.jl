@@ -19,7 +19,8 @@ include(joinpath(@__DIR__, "..", "src", "kernels", "Correlation.jl"))
 using .Config
 using .Metrics
 using .BenchCore
-using .Correlation
+using .Correlation: STRATEGIES_CORRELATION, DATASETS_CORRELATION, init_correlation!,
+                    get_kernel, kernel_correlation_seq!
 
 function parse_args(args)
     config = Dict{String, Any}(
@@ -124,7 +125,7 @@ function run_benchmark(config::Dict)
             continue
         end
         
-        kernel_fn = Correlation.get_kernel(strategy)
+        kernel_fn = get_kernel(strategy)
         
         setup_fn = () -> begin
             copyto!(data, data_orig)
@@ -187,4 +188,3 @@ if abspath(PROGRAM_FILE) == @__FILE__
     config = parse_args(ARGS)
     run_benchmark(config)
 end
-
