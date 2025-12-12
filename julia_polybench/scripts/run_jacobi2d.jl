@@ -22,7 +22,8 @@ include(joinpath(@__DIR__, "..", "src", "kernels", "Jacobi2D.jl"))
 using .Config
 using .Metrics
 using .BenchCore
-using .Jacobi2D
+using .Jacobi2D: STRATEGIES_JACOBI2D, DATASETS_JACOBI2D, init_jacobi2d!,
+                 get_kernel, kernel_jacobi2d_seq!
 
 function parse_args(args)
     config = Dict{String, Any}(
@@ -125,7 +126,7 @@ function run_benchmark(config::Dict)
             continue
         end
         
-        kernel_fn = Jacobi2D.get_kernel(strategy)
+        kernel_fn = get_kernel(strategy)
         
         setup_fn = () -> begin
             copyto!(A, A_orig)
@@ -188,8 +189,5 @@ end
 
 if abspath(PROGRAM_FILE) == @__FILE__
     config = parse_args(ARGS)
-
-
-  
     run_benchmark(config)
 end
