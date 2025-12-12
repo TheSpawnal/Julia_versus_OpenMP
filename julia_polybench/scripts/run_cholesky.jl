@@ -19,7 +19,8 @@ include(joinpath(@__DIR__, "..", "src", "kernels", "Cholesky.jl"))
 using .Config
 using .Metrics
 using .BenchCore
-using .Cholesky
+using .Cholesky: STRATEGIES_CHOLESKY, DATASETS_CHOLESKY, init_cholesky!, 
+                  verify_cholesky, get_kernel, kernel_cholesky_seq!
 
 function parse_args(args)
     config = Dict{String, Any}(
@@ -117,7 +118,7 @@ function run_benchmark(config::Dict)
             continue
         end
         
-        kernel_fn = Cholesky.get_kernel(strategy)
+        kernel_fn = get_kernel(strategy)
         
         setup_fn = () -> copyto!(A, A_orig)
         

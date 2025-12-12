@@ -323,7 +323,7 @@ function kernel_cholesky_tiled!(A::Matrix{Float64}; tile_size::Int=64)
 end
 
 # Get kernel by strategy name
-function get_kernel(strategy::String)
+function get_kernel(strategy::AbstractString)
     kernels = Dict(
         "sequential" => kernel_cholesky_seq!,
         "simd" => kernel_cholesky_simd!,
@@ -331,7 +331,7 @@ function get_kernel(strategy::String)
         "blas" => kernel_cholesky_blas!,
         "tiled" => kernel_cholesky_tiled!
     )
-    return get(kernels, strategy, kernel_cholesky_seq!)
+    return get(kernels, String(strategy), kernel_cholesky_seq!)
 end
 
 end # module
