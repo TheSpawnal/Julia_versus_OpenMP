@@ -308,14 +308,14 @@ function kernel_correlation_tiled!(
 end
 
 # Get kernel by strategy name
-function get_kernel(strategy::String)
+function get_kernel(strategy::AbstractString)
     kernels = Dict(
         "sequential" => kernel_correlation_seq!,
         "threads" => kernel_correlation_threads!,
         "colmajor" => kernel_correlation_colmajor!,
         "tiled" => kernel_correlation_tiled!
     )
-    return get(kernels, strategy, kernel_correlation_seq!)
+    return get(kernels, String(strategy), kernel_correlation_seq!)
 end
 
 end # module
