@@ -9,6 +9,7 @@ include("common/BenchCore.jl")
 include("kernels/Cholesky.jl")
 include("kernels/Correlation.jl")
 include("kernels/Jacobi2D.jl")
+include("kernels/Nussinov.jl")
 
 # Re-export modules
 using .Config
@@ -17,9 +18,10 @@ using .BenchCore
 using .Cholesky
 using .Correlation
 using .Jacobi2D
+using .Nussinov
 
 export Config, Metrics, BenchCore
-export Cholesky, Correlation, Jacobi2D
+export Cholesky, Correlation, Jacobi2D, Nussinov
 
 # Export common functions
 export configure_blas_threads, print_system_info
