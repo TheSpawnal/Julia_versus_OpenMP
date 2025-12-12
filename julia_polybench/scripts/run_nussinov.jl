@@ -93,7 +93,7 @@ function run_nussinov_benchmark(config::Dict)
     
     println("Dataset: $dataset_name")
     println("Sequence length: $n")
-    println("Memory: $(round(Config.memory_nussinov(n) / 2^20, digits=2)) MB")
+    #println("Memory: $(round(Config.memory_nussinov(n) / 2^20, digits=2)) MB")
     println("FLOPs (approx): $(Config.flops_nussinov(n))")
     println()
     println("NOTE: This benchmark has wavefront dependencies limiting parallelism.")
