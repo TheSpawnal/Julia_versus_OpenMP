@@ -170,14 +170,14 @@ function kernel_jacobi2d_redblack!(A::Matrix{Float64}, B::Matrix{Float64}, tstep
 end
 
 # Get kernel by strategy name
-function get_kernel(strategy::String)
+function get_kernel(strategy::AbstractString)
     kernels = Dict(
         "sequential" => kernel_jacobi2d_seq!,
         "threads" => kernel_jacobi2d_threads!,
         "tiled" => kernel_jacobi2d_tiled!,
         "redblack" => kernel_jacobi2d_redblack!
     )
-    return get(kernels, strategy, kernel_jacobi2d_seq!)
+    return get(kernels, String(strategy), kernel_jacobi2d_seq!)
 end
 
 end # module
