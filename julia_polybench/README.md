@@ -24,65 +24,6 @@ end
 end
 ```
 
-
-
-
-
-@2MM and 3MM notes and thoughts:
-Current Implementation Status/Key observations:
-Column-major loop ordering (correct)
-Use of @inbounds and @simd
-Static thread scheduling for predictable work distribution
-BLAS version using mul! for in-place operations
-
-Potential Improvements:
-A. Tiled Implementation Threading
-Current tiled is sequential. Add threading:
-juliafunction kernel_3mm_tiled_parallel!(E, A, B, F, C, D, G; tile_size=64)
-    ni, nk = size(A)
-    nj = size(B, 2)
-    nm = size(C, 2)
-    nl = size(D, 2)
-    
-    # E := A*B (tiled + threaded)
-    @threads :static for jj in 1:tile_size:nj
-        j_end = min(jj + tile_size - 1, nj)
-        @inbounds for kk in 1:tile_size:nk
-            k_end = min(kk + tile_size - 1, nk)
-            for ii in 1:tile_size:ni
-                i_end = min(ii + tile_size - 1, ni)
-                for j in jj:j_end
-                    for k in kk:k_end
-                        b_kj = B[k,j]
-                        @simd for i in ii:i_end
-                            E[i,j] += A[i,k] * b_kj
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    # Similar for F := C*D and G := E*F
-    # ...
-end
-B. Optimal Tile Size Selection
-julia# L1 cache is typically 32KB, L2 is 256KB
-# For Float64: 32KB / 8 bytes = 4096 elements
-# For 3 matrices in cache: sqrt(4096/3) ~ 37
-# Round to power of 2: 32 or 64
-
-const OPTIMAL_TILE_SIZE = 64  # Good default for most CPUs
-
-# Auto-tune function
-function find_optimal_tile_size(n; cache_size_kb=32)
-    elements_in_cache = (cache_size_kb * 1024) / 8  # Float64
-    # For 3 matrices: A_tile, B_tile, C_tile
-    tile = floor(Int, sqrt(elements_in_cache / 3))
-    # Round down to nearest power of 2
-    return prevpow(2, tile)
-end
-
 ### Zero-Allocation Hot Paths
 ```julia
 # Pre-allocate outside loop
