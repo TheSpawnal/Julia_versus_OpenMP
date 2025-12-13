@@ -6,6 +6,12 @@
 # This implementation uses blocked (right-looking) algorithm where only
 # the trailing matrix update is parallelized.
 
+# Why This Works
+
+# Only the trailing matrix update (O(n^2) per block) is parallelized
+# The sequential parts (O(block_size^3)) are small
+# No race conditions because each thread updates independent columns
+
 module PolyBenchCholesky_Corrected
 
 using LinearAlgebra
