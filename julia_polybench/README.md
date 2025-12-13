@@ -112,6 +112,15 @@ cholesky,MEDIUM,threads,8,18.2,18.9,19.1,0.6,14.1,6.68,83.5,PASS
 3. Tiled/blocked (cache optimization)
 4. Red-black (Gauss-Seidel ordering)
 
+### Nussinov (DP Wavefront)
+1. Sequential baseline
+2. Wavefront/anti-diagonal parallel
+3. Tiled wavefront
+4. Task-based with dependencies
+5. Pipeline parallel
+6. Hybrid coarse+fine grained
+
+
 ## DAS-5 Cluster Deployment
 
 ```bash
