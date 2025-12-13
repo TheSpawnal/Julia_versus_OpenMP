@@ -3,36 +3,32 @@ module PolyBenchJulia
 # Common utilities
 include("common/Config.jl")
 include("common/Metrics.jl")
-include("common/BenchCore.jl")
 
-# Kernel implementations
+# Kernel modules
 include("kernels/Cholesky.jl")
 include("kernels/Correlation.jl")
 include("kernels/Jacobi2D.jl")
-include("kernels/Nussinov.jl")
+include("kernels/Nussinov.jl")  # Add Nussinov
 
-# Re-export modules
+# Import and export submodules
 using .Config
 using .Metrics
-using .BenchCore
 using .Cholesky
 using .Correlation
 using .Jacobi2D
-using .Nussinov
+using .Nussinov  # Import Nussinov
 
-export Config, Metrics, BenchCore
-export Cholesky, Correlation, Jacobi2D, Nussinov
+# Export all submodules
+export Config, Metrics
+export Cholesky, Correlation, Jacobi2D, Nussinov  # Export Nussinov
 
-# Export common functions
+# Re-export commonly used functions from Config
 export configure_blas_threads, print_system_info
-export MetricsCollector, BenchmarkResult, record!, print_results, export_csv
-export benchmark_kernel, TimingResult
+export DATASETS_2MM, DATASETS_3MM, DATASETS_CHOLESKY
+export DATASETS_CORRELATION, DATASETS_JACOBI2D, DATASETS_NUSSINOV
+export flops_2mm, flops_3mm, flops_cholesky, flops_correlation, flops_jacobi2d, flops_nussinov
 
-# Version
-const VERSION = v"1.0.0"
-
-function __init__()
-    configure_blas_threads()
-end
+# Re-export from Metrics
+export BenchmarkResult, MetricsCollector, record!, print_results, export_csv, compute_efficiency
 
 end # module

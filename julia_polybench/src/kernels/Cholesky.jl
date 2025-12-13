@@ -4,108 +4,129 @@ using LinearAlgebra
 using Base.Threads
 using Printf
 
-export STRATEGIES_CHOLESKY, DATASETS_CHOLESKY
-export init_cholesky!, verify_cholesky, get_kernel
+export DATASET_SIZES, flops_cholesky
+export init_array!, verify_result
 export kernel_cholesky_seq!, kernel_cholesky_simd!
 export kernel_cholesky_threads!, kernel_cholesky_blas!, kernel_cholesky_tiled!
+export get_kernel
 
-const STRATEGIES_CHOLESKY = [
-    "sequential",
-    "simd",
-    "threads",
-    "blas",
-    "tiled"
-]
-
-const DATASETS_CHOLESKY = Dict(
-    "MINI" => (n=40,),
-    "SMALL" => (n=120,),
-    "MEDIUM" => (n=400,),
-    "LARGE" => (n=2000,),
-    "EXTRALARGE" => (n=4000,)
+# Dataset sizes following PolyBench specification
+const DATASET_SIZES = Dict(
+    "MINI" => 40,
+    "SMALL" => 120,
+    "MEDIUM" => 400,
+    "LARGE" => 2000,
+    "EXTRALARGE" => 4000
 )
 
-# Initialize matrix as positive-definite following PolyBench specification
-function init_cholesky!(A::Matrix{Float64})
+# FLOPs for Cholesky: n^3/3
+function flops_cholesky(n::Int)
+    return Float64(n)^3 / 3
+end
+
+# Initialize symmetric positive-definite matrix
+# Uses A = B * B^T construction for guaranteed SPD
+function init_array!(A::Matrix{Float64})
     n = size(A, 1)
     
-    # Initialize lower triangular part (column-major)
+    # Build lower triangular + diagonal
     @inbounds for j in 1:n
         for i in j:n
             if i == j
                 A[i, j] = 1.0
-            elseif i > j
-                A[i, j] = Float64((-j % n) / n + 1)
             else
-                A[i, j] = 0.0
+                A[i, j] = (-(j - 1) % n) / n + 1.0
             end
         end
     end
     
-    # Make positive semi-definite: A = B * B^T
-    B = copy(A)
-    
-    # Column-major matrix multiplication
+    # Make symmetric
     @inbounds for j in 1:n
-        for i in 1:n
-            sum_val = 0.0
-            for k in 1:n
-                sum_val += B[i, k] * B[j, k]
+        for i in 1:(j-1)
+            A[i, j] = A[j, i]
+        end
+    end
+    
+    # Make positive definite: A = B * B^T
+    B = copy(A)
+    fill!(A, 0.0)
+    
+    # Column-major friendly A = B * B^T
+    @inbounds for j in 1:n
+        for k in 1:n
+            b_jk = B[j, k]
+            for i in j:n
+                A[i, j] += B[i, k] * b_jk
             end
-            A[i, j] = sum_val
+        end
+    end
+    
+    # Symmetrize (copy lower to upper)
+    @inbounds for j in 1:n
+        for i in 1:(j-1)
+            A[i, j] = A[j, i]
         end
     end
     
     return nothing
 end
 
-# Verify Cholesky decomposition: A = L * L^T
-function verify_cholesky(A_orig::Matrix{Float64}, L::Matrix{Float64}; tol::Float64=1e-6)
+# Verify Cholesky result: ||A - L*L^T|| / ||A||
+function verify_result(A_orig::Matrix{Float64}, L::Matrix{Float64})
     n = size(A_orig, 1)
-    max_err = 0.0
     
+    # Compute L * L^T
+    LLT = zeros(n, n)
     @inbounds for j in 1:n
-        for i in j:n
-            sum_val = 0.0
-            for k in 1:min(i, j)
-                sum_val += L[i, k] * L[j, k]
+        for k in 1:j
+            l_jk = L[j, k]
+            for i in j:n
+                LLT[i, j] += L[i, k] * l_jk
             end
-            err = abs(A_orig[i, j] - sum_val)
-            max_err = max(max_err, err)
         end
     end
     
-    return max_err < tol, max_err
+    # Symmetrize
+    @inbounds for j in 1:n
+        for i in 1:(j-1)
+            LLT[i, j] = LLT[j, i]
+        end
+    end
+    
+    # Relative error
+    diff_norm = norm(A_orig - LLT)
+    orig_norm = norm(A_orig)
+    
+    return diff_norm / max(orig_norm, 1e-10)
 end
 
 #=============================================================================
- Strategy 1: Sequential baseline
- - Cholesky-Banachiewicz algorithm (row-by-row)
+ Strategy 1: Sequential baseline (Cholesky-Banachiewicz)
+ - Standard lower-triangular Cholesky
+ - Column-major optimized
 =============================================================================#
 function kernel_cholesky_seq!(A::Matrix{Float64})
     n = size(A, 1)
     
-    @inbounds for i in 1:n
-        # Off-diagonal elements
-        for j in 1:(i-1)
-            sum_val = 0.0
-            for k in 1:(j-1)
-                sum_val += A[i, k] * A[j, k]
-            end
-            A[i, j] -= sum_val
-            A[i, j] /= A[j, j]
+    @inbounds for j in 1:n
+        # Diagonal element: L[j,j] = sqrt(A[j,j] - sum(L[j,k]^2))
+        sum_sq = 0.0
+        for k in 1:(j-1)
+            sum_sq += A[j, k] * A[j, k]
         end
+        A[j, j] = sqrt(A[j, j] - sum_sq)
         
-        # Diagonal element
-        sum_val = 0.0
-        for k in 1:(i-1)
-            sum_val += A[i, k] * A[i, k]
+        # Column elements below diagonal
+        for i in (j+1):n
+            sum_prod = 0.0
+            for k in 1:(j-1)
+                sum_prod += A[i, k] * A[j, k]
+            end
+            A[i, j] = (A[i, j] - sum_prod) / A[j, j]
         end
-        A[i, i] -= sum_val
-        A[i, i] = sqrt(A[i, i])
     end
     
-    # Zero out upper triangular
+    # Zero upper triangular
     @inbounds for j in 2:n
         for i in 1:(j-1)
             A[i, j] = 0.0
@@ -116,117 +137,32 @@ function kernel_cholesky_seq!(A::Matrix{Float64})
 end
 
 #=============================================================================
- Strategy 2: SIMD optimized
- - Vectorized dot products
+ Strategy 2: SIMD-optimized dot products
+ - Uses @simd for inner loops
 =============================================================================#
 function kernel_cholesky_simd!(A::Matrix{Float64})
     n = size(A, 1)
     
-    @inbounds for i in 1:n
-        # Off-diagonal elements with SIMD
-        for j in 1:(i-1)
-            sum_val = 0.0
+    @inbounds for j in 1:n
+        # Diagonal element with SIMD reduction
+        sum_sq = 0.0
+        @simd for k in 1:(j-1)
+            sum_sq += A[j, k] * A[j, k]
+        end
+        A[j, j] = sqrt(A[j, j] - sum_sq)
+        
+        # Column elements below diagonal
+        diag_inv = 1.0 / A[j, j]
+        for i in (j+1):n
+            sum_prod = 0.0
             @simd for k in 1:(j-1)
-                sum_val += A[i, k] * A[j, k]
+                sum_prod += A[i, k] * A[j, k]
             end
-            A[i, j] -= sum_val
-            A[i, j] /= A[j, j]
-        end
-        
-        # Diagonal with SIMD
-        sum_val = 0.0
-        @simd for k in 1:(i-1)
-            sum_val += A[i, k] * A[i, k]
-        end
-        A[i, i] -= sum_val
-        A[i, i] = sqrt(A[i, i])
-    end
-    
-    # Zero out upper triangular
-    @inbounds for j in 2:n
-        @simd for i in 1:(j-1)
-            A[i, j] = 0.0
+            A[i, j] = (A[i, j] - sum_prod) * diag_inv
         end
     end
     
-    return nothing
-end
-
-#=============================================================================
- Strategy 3: Threaded (parallel trailing update)
- - Zero-allocation design with pre-allocated thread-local storage
-=============================================================================#
-function kernel_cholesky_threads!(A::Matrix{Float64})
-    n = size(A, 1)
-    nt = nthreads()
-    
-    # Pre-allocate thread-local accumulators ONCE
-    thread_sums = zeros(Float64, nt)
-    
-    @inbounds for i in 1:n
-        # Off-diagonal: parallel only for large enough inner loops
-        for j in 1:(i-1)
-            if j > 64 && nt > 1
-                # Parallel reduction
-                fill!(thread_sums, 0.0)
-                chunk = cld(j-1, nt)
-                
-                @threads :static for tid in 1:nt
-                    k_start = (tid - 1) * chunk + 1
-                    k_end = min(tid * chunk, j - 1)
-                    local_sum = 0.0
-                    for k in k_start:k_end
-                        local_sum += A[i, k] * A[j, k]
-                    end
-                    thread_sums[tid] = local_sum
-                end
-                
-                total = 0.0
-                for t in 1:nt
-                    total += thread_sums[t]
-                end
-                A[i, j] -= total
-            else
-                sum_val = 0.0
-                for k in 1:(j-1)
-                    sum_val += A[i, k] * A[j, k]
-                end
-                A[i, j] -= sum_val
-            end
-            A[i, j] /= A[j, j]
-        end
-        
-        # Diagonal element
-        if i > 64 && nt > 1
-            fill!(thread_sums, 0.0)
-            chunk = cld(i-1, nt)
-            
-            @threads :static for tid in 1:nt
-                k_start = (tid - 1) * chunk + 1
-                k_end = min(tid * chunk, i - 1)
-                local_sum = 0.0
-                for k in k_start:k_end
-                    local_sum += A[i, k] * A[i, k]
-                end
-                thread_sums[tid] = local_sum
-            end
-            
-            total = 0.0
-            for t in 1:nt
-                total += thread_sums[t]
-            end
-            A[i, i] -= total
-        else
-            sum_val = 0.0
-            for k in 1:(i-1)
-                sum_val += A[i, k] * A[i, k]
-            end
-            A[i, i] -= sum_val
-        end
-        A[i, i] = sqrt(A[i, i])
-    end
-    
-    # Zero out upper triangular
+    # Zero upper triangular
     @inbounds for j in 2:n
         for i in 1:(j-1)
             A[i, j] = 0.0
@@ -237,8 +173,78 @@ function kernel_cholesky_threads!(A::Matrix{Float64})
 end
 
 #=============================================================================
- Strategy 4: BLAS-accelerated
- - Uses Julia's optimized LAPACK cholesky
+ Strategy 3: Right-looking blocked (PROPER parallelization)
+ - Parallelizes the TRAILING MATRIX UPDATE (the only parallelizable part)
+ - Respects Cholesky data dependencies
+=============================================================================#
+function kernel_cholesky_threads!(A::Matrix{Float64}; tile_size::Int=64)
+    n = size(A, 1)
+    ts = tile_size
+    
+    @inbounds for kk in 1:ts:n
+        k_end = min(kk + ts - 1, n)
+        
+        # 1. Factor diagonal block (sequential - must be serial due to dependencies)
+        for j in kk:k_end
+            sum_sq = 0.0
+            for k in 1:(j-1)
+                sum_sq += A[j, k] * A[j, k]
+            end
+            A[j, j] = sqrt(A[j, j] - sum_sq)
+            
+            for i in (j+1):k_end
+                sum_prod = 0.0
+                for k in 1:(j-1)
+                    sum_prod += A[i, k] * A[j, k]
+                end
+                A[i, j] = (A[i, j] - sum_prod) / A[j, j]
+            end
+        end
+        
+        # 2. Solve panel below diagonal block: A21 = A21 / L11^T
+        if k_end < n
+            for j in kk:k_end
+                diag_inv = 1.0 / A[j, j]
+                for i in (k_end+1):n
+                    sum_prod = 0.0
+                    for k in kk:(j-1)
+                        sum_prod += A[i, k] * A[j, k]
+                    end
+                    A[i, j] = (A[i, j] - sum_prod) * diag_inv
+                end
+            end
+        end
+        
+        # 3. UPDATE TRAILING MATRIX - THIS IS THE PARALLEL PART!
+        # A22 = A22 - L21 * L21^T
+        # Each column of the trailing matrix can be updated independently
+        if k_end < n
+            @threads :static for j in (k_end+1):n
+                # Update column j of trailing matrix
+                for i in j:n
+                    sum_update = 0.0
+                    @simd for k in kk:k_end
+                        sum_update += A[i, k] * A[j, k]
+                    end
+                    A[i, j] -= sum_update
+                end
+            end
+        end
+    end
+    
+    # Zero upper triangular
+    @inbounds for j in 2:n
+        for i in 1:(j-1)
+            A[i, j] = 0.0
+        end
+    end
+    
+    return nothing
+end
+
+#=============================================================================
+ Strategy 4: BLAS-accelerated (LAPACK)
+ - Uses optimized library implementation
 =============================================================================#
 function kernel_cholesky_blas!(A::Matrix{Float64})
     n = size(A, 1)
@@ -254,8 +260,7 @@ function kernel_cholesky_blas!(A::Matrix{Float64})
             end
         end
     catch e
-        # Fallback to sequential if LAPACK fails
-        @warn "BLAS Cholesky failed, using sequential: $e"
+        @warn "BLAS Cholesky failed, using sequential fallback"
         kernel_cholesky_seq!(A)
     end
     
@@ -263,8 +268,9 @@ function kernel_cholesky_blas!(A::Matrix{Float64})
 end
 
 #=============================================================================
- Strategy 5: Tiled/Blocked (cache-optimized)
+ Strategy 5: Tiled/Blocked (cache-optimized, single-threaded)
  - Process in blocks for better cache utilization
+ - No threading - pure cache optimization
 =============================================================================#
 function kernel_cholesky_tiled!(A::Matrix{Float64}; tile_size::Int=64)
     n = size(A, 1)
@@ -274,38 +280,54 @@ function kernel_cholesky_tiled!(A::Matrix{Float64}; tile_size::Int=64)
         k_end = min(kk + ts - 1, n)
         
         # Factor diagonal block
-        for i in kk:k_end
-            for j in kk:(i-1)
-                sum_val = 0.0
-                for k in kk:(j-1)
-                    sum_val += A[i, k] * A[j, k]
-                end
-                A[i, j] -= sum_val
-                A[i, j] /= A[j, j]
+        for j in kk:k_end
+            # Compute diagonal element
+            sum_sq = 0.0
+            for k in 1:(j-1)
+                sum_sq += A[j, k] * A[j, k]
             end
+            A[j, j] = sqrt(A[j, j] - sum_sq)
             
-            sum_val = 0.0
-            for k in kk:(i-1)
-                sum_val += A[i, k] * A[i, k]
+            # Compute column below diagonal within block
+            diag_inv = 1.0 / A[j, j]
+            for i in (j+1):k_end
+                sum_prod = 0.0
+                for k in 1:(j-1)
+                    sum_prod += A[i, k] * A[j, k]
+                end
+                A[i, j] = (A[i, j] - sum_prod) * diag_inv
             end
-            A[i, i] -= sum_val
-            A[i, i] = sqrt(A[i, i])
         end
         
-        # Update trailing blocks
+        # Update panel below diagonal block
         if k_end < n
-            # Column panel update
-            for ii in (k_end+1):ts:n
-                i_end = min(ii + ts - 1, n)
-                
-                for i in ii:i_end
-                    for j in kk:k_end
-                        sum_val = 0.0
-                        for k in kk:(j-1)
-                            sum_val += A[i, k] * A[j, k]
+            for j in kk:k_end
+                diag_inv = 1.0 / A[j, j]
+                for i in (k_end+1):n
+                    sum_prod = 0.0
+                    for k in kk:(j-1)
+                        sum_prod += A[i, k] * A[j, k]
+                    end
+                    A[i, j] = (A[i, j] - sum_prod) * diag_inv
+                end
+            end
+            
+            # Update trailing matrix A22 = A22 - L21 * L21^T
+            # Process in tiles for cache efficiency
+            for jj in (k_end+1):ts:n
+                j_end = min(jj + ts - 1, n)
+                for ii in jj:ts:n
+                    i_end = min(ii + ts - 1, n)
+                    
+                    # Update tile [ii:i_end, jj:j_end]
+                    for j in jj:j_end
+                        for i in max(ii, j):i_end
+                            sum_update = 0.0
+                            @simd for k in kk:k_end
+                                sum_update += A[i, k] * A[j, k]
+                            end
+                            A[i, j] -= sum_update
                         end
-                        A[i, j] -= sum_val
-                        A[i, j] /= A[j, j]
                     end
                 end
             end
@@ -322,16 +344,25 @@ function kernel_cholesky_tiled!(A::Matrix{Float64}; tile_size::Int=64)
     return nothing
 end
 
-# Get kernel by strategy name
-function get_kernel(strategy::AbstractString)
+# Kernel selector
+function get_kernel(name::AbstractString)
+    name_lower = lowercase(String(name))
+    
     kernels = Dict(
         "sequential" => kernel_cholesky_seq!,
+        "seq" => kernel_cholesky_seq!,
         "simd" => kernel_cholesky_simd!,
         "threads" => kernel_cholesky_threads!,
         "blas" => kernel_cholesky_blas!,
-        "tiled" => kernel_cholesky_tiled!
+        "tiled" => kernel_cholesky_tiled!,
     )
-    return get(kernels, String(strategy), kernel_cholesky_seq!)
+    
+    if haskey(kernels, name_lower)
+        return kernels[name_lower]
+    else
+        available = join(keys(kernels), ", ")
+        error("Unknown kernel: $name. Available: $available")
+    end
 end
 
 end # module

@@ -1,190 +1,455 @@
 #!/usr/bin/env julia
-#=
-Correlation Matrix Benchmark Runner
-Usage: julia -t 8 run_correlation.jl --dataset MEDIUM
-=#
+# Correlation Matrix Benchmark Runner - FIXED VERSION
+# Usage: julia -t N scripts/run_correlation.jl --dataset MEDIUM
 
-push!(LOAD_PATH, joinpath(@__DIR__, "..", "src"))
-
-using Printf
 using LinearAlgebra
-using Base.Threads
 using Statistics
+using Printf
+using Dates
 
-include(joinpath(@__DIR__, "..", "src", "common", "Config.jl"))
-include(joinpath(@__DIR__, "..", "src", "common", "Metrics.jl"))
-include(joinpath(@__DIR__, "..", "src", "common", "BenchCore.jl"))
-include(joinpath(@__DIR__, "..", "src", "kernels", "Correlation.jl"))
+# Configure BLAS threads FIRST
+function configure_blas_threads()
+    if Threads.nthreads() > 1
+        BLAS.set_num_threads(1)
+    else
+        BLAS.set_num_threads(Sys.CPU_THREADS)
+    end
+end
 
-using .Config
-using .Metrics
-using .BenchCore
-using .Correlation: STRATEGIES_CORRELATION, DATASETS_CORRELATION, init_correlation!,
-                    get_kernel, kernel_correlation_seq!
+configure_blas_threads()
 
-function parse_args(args)
-    config = Dict{String, Any}(
-        "dataset" => "MEDIUM",
-        "strategies" => "all",
-        "iterations" => 10,
-        "warmup" => 5,
-        "verify" => true,
-        "output" => "csv"
-    )
+# Dataset sizes
+const DATASET_SIZES = Dict(
+    "MINI" => (m=28, n=32),
+    "SMALL" => (m=80, n=100),
+    "MEDIUM" => (m=240, n=260),
+    "LARGE" => (m=1200, n=1400),
+    "EXTRALARGE" => (m=2600, n=3000)
+)
+
+# FLOPs calculation
+flops_correlation(m, n) = n*m + 2*n*m + 2*n*m + n^2*m
+
+# Strategy classification
+const THREADED_STRATEGIES = Set(["threads", "colmajor", "tiled"])
+
+function compute_efficiency(strategy::String, speedup::Float64, nthreads::Int)
+    if lowercase(strategy) in THREADED_STRATEGIES
+        return (speedup / max(nthreads, 1)) * 100.0
+    else
+        return speedup * 100.0
+    end
+end
+
+#=============================================================================
+ INITIALIZATION
+=============================================================================#
+function init_data!(data::Matrix{Float64})
+    m, n = size(data)
+    @inbounds for j in 1:n
+        for i in 1:m
+            data[i, j] = Float64((i-1) * (j-1)) / m + Float64(i-1)
+        end
+    end
+    return nothing
+end
+
+function verify_result(corr_ref::Matrix{Float64}, corr_test::Matrix{Float64})
+    return norm(corr_ref - corr_test) / max(norm(corr_ref), 1e-10)
+end
+
+#=============================================================================
+ KERNEL IMPLEMENTATIONS
+ NOTE: Using col_mean/col_stddev to avoid shadowing Statistics.mean
+=============================================================================#
+
+# Strategy 1: Sequential baseline
+function kernel_correlation_seq!(data::Matrix{Float64}, corr::Matrix{Float64},
+                                  col_mean::Vector{Float64}, col_stddev::Vector{Float64})
+    m, n = size(data)
+    eps = 1e-10
+    
+    @inbounds for j in 1:n
+        sum_val = 0.0
+        for i in 1:m
+            sum_val += data[i, j]
+        end
+        col_mean[j] = sum_val / m
+    end
+    
+    @inbounds for j in 1:n
+        sum_sq = 0.0
+        for i in 1:m
+            diff = data[i, j] - col_mean[j]
+            sum_sq += diff * diff
+        end
+        col_stddev[j] = sqrt(sum_sq / m)
+        if col_stddev[j] < eps
+            col_stddev[j] = 1.0
+        end
+    end
+    
+    @inbounds for j in 1:n
+        inv_std = 1.0 / (sqrt(Float64(m)) * col_stddev[j])
+        for i in 1:m
+            data[i, j] = (data[i, j] - col_mean[j]) * inv_std
+        end
+    end
+    
+    @inbounds for j in 1:n
+        corr[j, j] = 1.0
+        for i in 1:(j-1)
+            sum_val = 0.0
+            for k in 1:m
+                sum_val += data[k, i] * data[k, j]
+            end
+            corr[i, j] = sum_val
+            corr[j, i] = sum_val
+        end
+    end
+    
+    return nothing
+end
+
+# Strategy 2: Threaded row-parallel
+function kernel_correlation_threads!(data::Matrix{Float64}, corr::Matrix{Float64},
+                                      col_mean::Vector{Float64}, col_stddev::Vector{Float64})
+    m, n = size(data)
+    eps = 1e-10
+    
+    Threads.@threads :static for j in 1:n
+        sum_val = 0.0
+        @inbounds @simd for i in 1:m
+            sum_val += data[i, j]
+        end
+        col_mean[j] = sum_val / m
+    end
+    
+    Threads.@threads :static for j in 1:n
+        sum_sq = 0.0
+        @inbounds @simd for i in 1:m
+            diff = data[i, j] - col_mean[j]
+            sum_sq += diff * diff
+        end
+        col_stddev[j] = sqrt(sum_sq / m)
+        if col_stddev[j] < eps
+            col_stddev[j] = 1.0
+        end
+    end
+    
+    Threads.@threads :static for j in 1:n
+        inv_std = 1.0 / (sqrt(Float64(m)) * col_stddev[j])
+        @inbounds @simd for i in 1:m
+            data[i, j] = (data[i, j] - col_mean[j]) * inv_std
+        end
+    end
+    
+    Threads.@threads :static for j in 1:n
+        @inbounds corr[j, j] = 1.0
+        @inbounds for i in 1:(j-1)
+            sum_val = 0.0
+            @simd for k in 1:m
+                sum_val += data[k, i] * data[k, j]
+            end
+            corr[i, j] = sum_val
+            corr[j, i] = sum_val
+        end
+    end
+    
+    return nothing
+end
+
+# Strategy 3: Column-major optimized with threading
+function kernel_correlation_colmajor!(data::Matrix{Float64}, corr::Matrix{Float64},
+                                       col_mean::Vector{Float64}, col_stddev::Vector{Float64})
+    m, n = size(data)
+    eps = 1e-10
+    
+    Threads.@threads :static for j in 1:n
+        sum_val = 0.0
+        sum_sq = 0.0
+        @inbounds for i in 1:m
+            val = data[i, j]
+            sum_val += val
+            sum_sq += val * val
+        end
+        col_mean[j] = sum_val / m
+        variance = sum_sq / m - col_mean[j]^2
+        col_stddev[j] = sqrt(max(variance, 0.0))
+        if col_stddev[j] < eps
+            col_stddev[j] = 1.0
+        end
+    end
+    
+    Threads.@threads :static for j in 1:n
+        inv_std = 1.0 / (sqrt(Float64(m)) * col_stddev[j])
+        @inbounds @simd for i in 1:m
+            data[i, j] = (data[i, j] - col_mean[j]) * inv_std
+        end
+    end
+    
+    fill!(corr, 0.0)
+    Threads.@threads :static for j in 1:n
+        @inbounds corr[j, j] = 1.0
+        @inbounds for i in 1:(j-1)
+            sum_val = 0.0
+            @simd for k in 1:m
+                sum_val += data[k, i] * data[k, j]
+            end
+            corr[i, j] = sum_val
+            corr[j, i] = sum_val
+        end
+    end
+    
+    return nothing
+end
+
+# Strategy 4: Tiled for cache optimization (threaded)
+function kernel_correlation_tiled!(data::Matrix{Float64}, corr::Matrix{Float64},
+                                    col_mean::Vector{Float64}, col_stddev::Vector{Float64};
+                                    tile_size::Int=64)
+    m, n = size(data)
+    eps = 1e-10
+    ts = tile_size
+    
+    Threads.@threads :static for j in 1:n
+        sum_val = 0.0
+        sum_sq = 0.0
+        @inbounds for i in 1:m
+            val = data[i, j]
+            sum_val += val
+            sum_sq += val * val
+        end
+        col_mean[j] = sum_val / m
+        variance = sum_sq / m - col_mean[j]^2
+        col_stddev[j] = sqrt(max(variance, 0.0))
+        if col_stddev[j] < eps
+            col_stddev[j] = 1.0
+        end
+    end
+    
+    Threads.@threads :static for j in 1:n
+        inv_std = 1.0 / (sqrt(Float64(m)) * col_stddev[j])
+        @inbounds @simd for i in 1:m
+            data[i, j] = (data[i, j] - col_mean[j]) * inv_std
+        end
+    end
+    
+    fill!(corr, 0.0)
+    for j in 1:n
+        corr[j, j] = 1.0
+    end
+    
+    Threads.@threads :static for jj in 1:ts:n
+        j_end = min(jj + ts - 1, n)
+        
+        for ii in 1:ts:n
+            i_end = min(ii + ts - 1, n)
+            
+            @inbounds for j in jj:j_end
+                for i in ii:min(i_end, j-1)
+                    sum_val = 0.0
+                    @simd for k in 1:m
+                        sum_val += data[k, i] * data[k, j]
+                    end
+                    corr[i, j] = sum_val
+                    corr[j, i] = sum_val
+                end
+            end
+        end
+    end
+    
+    return nothing
+end
+
+#=============================================================================
+ BENCHMARK RUNNER
+=============================================================================#
+
+struct BenchmarkResult
+    strategy::String
+    times_ms::Vector{Float64}
+    verified::Bool
+    error::Float64
+end
+
+function run_benchmark(kernel!, data_orig::Matrix{Float64}, corr::Matrix{Float64},
+                       col_mean::Vector{Float64}, col_stddev::Vector{Float64};
+                       warmup::Int=3, iterations::Int=10)
+    times = Float64[]
+    
+    for _ in 1:warmup
+        data = copy(data_orig)
+        fill!(corr, 0.0)
+        kernel!(data, corr, col_mean, col_stddev)
+    end
+    GC.gc()
+    
+    for _ in 1:iterations
+        data = copy(data_orig)
+        fill!(corr, 0.0)
+        t = @elapsed kernel!(data, corr, col_mean, col_stddev)
+        push!(times, t * 1000)
+    end
+    
+    return times
+end
+
+function main()
+    dataset = "MEDIUM"
+    strategies_arg = "all"
+    iterations = 10
+    warmup = 5
+    do_verify = true
+    output_csv = false
     
     i = 1
-    while i <= length(args)
-        arg = args[i]
-        if arg == "--dataset" && i < length(args)
-            config["dataset"] = uppercase(args[i+1])
+    while i <= length(ARGS)
+        if ARGS[i] == "--dataset" && i < length(ARGS)
+            dataset = uppercase(ARGS[i+1])
             i += 2
-        elseif arg == "--strategies" && i < length(args)
-            config["strategies"] = args[i+1]
+        elseif ARGS[i] == "--strategies" && i < length(ARGS)
+            strategies_arg = ARGS[i+1]
             i += 2
-        elseif arg == "--iterations" && i < length(args)
-            config["iterations"] = parse(Int, args[i+1])
+        elseif ARGS[i] == "--iterations" && i < length(ARGS)
+            iterations = parse(Int, ARGS[i+1])
             i += 2
-        elseif arg == "--warmup" && i < length(args)
-            config["warmup"] = parse(Int, args[i+1])
+        elseif ARGS[i] == "--output" && i < length(ARGS)
+            output_csv = ARGS[i+1] == "csv"
             i += 2
-        elseif arg == "--no-verify"
-            config["verify"] = false
-            i += 1
-        elseif arg == "--output" && i < length(args)
-            config["output"] = args[i+1]
-            i += 2
-        elseif arg == "--help" || arg == "-h"
-            println("Correlation Benchmark Runner")
-            println("Usage: julia -t N run_correlation.jl [OPTIONS]")
-            println()
-            println("Options:")
-            println("  --dataset NAME      MINI/SMALL/MEDIUM/LARGE/EXTRALARGE")
-            println("  --strategies LIST   Comma-separated or 'all'")
-            println("  --iterations N      Timed iterations (default: 10)")
-            println("  --warmup N          Warmup iterations (default: 5)")
-            println("  --no-verify         Skip verification")
-            println("  --output FORMAT     csv or json")
-            println()
-            println("Strategies: ", join(STRATEGIES_CORRELATION, ", "))
-            exit(0)
         else
             i += 1
         end
     end
-    return config
-end
-
-function run_benchmark(config::Dict)
-    dataset_name = config["dataset"]
     
-    if !haskey(DATASETS_CORRELATION, dataset_name)
-        error("Unknown dataset: $dataset_name")
+    if !haskey(DATASET_SIZES, dataset)
+        println("Unknown dataset: $dataset")
+        return
     end
     
-    params = DATASETS_CORRELATION[dataset_name]
+    params = DATASET_SIZES[dataset]
     m, n = params.m, params.n
+    flops = flops_correlation(m, n)
+    memory_mb = (m * n + n * n) * 8 / 1024^2
+    
+    all_strategies = Dict(
+        "sequential" => kernel_correlation_seq!,
+        "threads" => kernel_correlation_threads!,
+        "colmajor" => kernel_correlation_colmajor!,
+        "tiled" => kernel_correlation_tiled!,
+    )
+    
+    if strategies_arg == "all"
+        strategies = ["sequential", "threads", "colmajor", "tiled"]
+    else
+        strategies = [strip(String(s)) for s in split(strategies_arg, ",")]
+    end
     
     println("="^70)
     println("CORRELATION MATRIX BENCHMARK")
     println("="^70)
-    Config.print_system_info()
-    println("Dataset: $dataset_name (m=$m, n=$n)")
-    println("Memory: $(round((m*n + 2*n + n*n)*8/2^20, digits=2)) MB")
+    println("Julia version: $(VERSION)")
+    println("Threads: $(Threads.nthreads())")
+    println("BLAS threads: $(BLAS.get_num_threads())")
+    println("CPU threads: $(Sys.CPU_THREADS)")
+    println("Dataset: $dataset (m=$m, n=$n)")
+    @printf("Memory: %.2f MB\n", memory_mb)
     println()
     
-    # Allocate arrays
-    data = Matrix{Float64}(undef, m, n)
     data_orig = Matrix{Float64}(undef, m, n)
-    mean = Vector{Float64}(undef, n)
-    stddev = Vector{Float64}(undef, n)
-    corr = Matrix{Float64}(undef, n, n)
+    init_data!(data_orig)
     
-    # Initialize
-    init_correlation!(data, mean, stddev, corr)
-    copyto!(data_orig, data)
+    corr = Matrix{Float64}(undef, n, n)
+    col_mean = Vector{Float64}(undef, n)
+    col_stddev = Vector{Float64}(undef, n)
     
     # Reference result
     data_ref = copy(data_orig)
-    corr_ref = zeros(Float64, n, n)
-    for i in 1:n
-        corr_ref[i, i] = 1.0
-    end
-    kernel_correlation_seq!(data_ref, copy(mean), copy(stddev), corr_ref)
+    corr_ref = zeros(n, n)
+    kernel_correlation_seq!(data_ref, corr_ref, col_mean, col_stddev)
     
-    # Parse strategies
-    strategies = config["strategies"] == "all" ? STRATEGIES_CORRELATION : split(config["strategies"], ",")
+    results = Dict{String, BenchmarkResult}()
     
-    flops = Config.flops_correlation(m, n)
-    mc = MetricsCollector()
-    
-    for strategy in strategies
-        strategy = strip(String(strategy))
-        
-        if !(strategy in STRATEGIES_CORRELATION)
-            println("Unknown strategy: $strategy")
+    for strat in strategies
+        if !haskey(all_strategies, strat)
+            println("Unknown strategy: $strat")
             continue
         end
         
-        kernel_fn = get_kernel(strategy)
+        kernel! = all_strategies[strat]
+        times = run_benchmark(kernel!, data_orig, corr, col_mean, col_stddev;
+                              warmup=warmup, iterations=iterations)
         
-        setup_fn = () -> begin
-            copyto!(data, data_orig)
-            fill!(mean, 0.0)
-            fill!(stddev, 0.0)
-            fill!(corr, 0.0)
-            for i in 1:n
-                corr[i, i] = 1.0
-            end
+        data_test = copy(data_orig)
+        fill!(corr, 0.0)
+        kernel!(data_test, corr, col_mean, col_stddev)
+        err = do_verify ? verify_result(corr_ref, corr) : 0.0
+        passed = err < 1e-6
+        
+        results[strat] = BenchmarkResult(strat, times, passed, err)
+        
+        if do_verify && !passed
+            @printf("  Verification FAILED: %s (err=%.2e)\n", strat, err)
+        end
+    end
+    
+    seq_time = haskey(results, "sequential") ? minimum(results["sequential"].times_ms) : nothing
+    
+    println()
+    println("-"^90)
+    @printf("%-16s | %10s | %10s | %10s | %8s | %8s | %6s\n",
+            "Strategy", "Min(ms)", "Median(ms)", "Mean(ms)", "GFLOP/s", "Speedup", "Eff(%)")
+    println("-"^90)
+    
+    for strat in ["sequential", "threads", "colmajor", "tiled"]
+        if !haskey(results, strat)
+            continue
         end
         
-        timing = benchmark_kernel(
-            () -> kernel_fn(data, mean, stddev, corr),
-            setup_fn,
-            iterations=config["iterations"],
-            warmup_iterations=config["warmup"]
-        )
+        r = results[strat]
+        min_t = minimum(r.times_ms)
+        med_t = median(r.times_ms)
+        mean_t = Statistics.mean(r.times_ms)  # Fully qualified
+        gflops = flops / (min_t / 1000) / 1e9
         
-        # Verification
-        verified = true
-        if config["verify"]
-            setup_fn()
-            kernel_fn(data, mean, stddev, corr)
-            max_err = maximum(abs.(corr - corr_ref))
-            verified = max_err < 1e-6
+        speedup = seq_time === nothing ? 1.0 : seq_time / min_t
+        efficiency = compute_efficiency(strat, speedup, Threads.nthreads())
+        
+        @printf("%-16s | %10.3f | %10.3f | %10.3f | %8.2f | %8.2fx | %6.1f\n",
+                strat, min_t, med_t, mean_t, gflops, speedup, efficiency)
+    end
+    println("-"^90)
+    
+    if output_csv
+        timestamp = Dates.format(now(), "yyyymmdd_HHMMSS")
+        mkpath("results")
+        filepath = "results/correlation_$(dataset)_$(timestamp).csv"
+        
+        open(filepath, "w") do io
+            println(io, "benchmark,dataset,strategy,threads,min_ms,median_ms,mean_ms,std_ms,gflops,speedup,efficiency,verified")
             
-            # Also check diagonal is 1
-            for i in 1:n
-                if abs(corr[i, i] - 1.0) > 1e-10
-                    verified = false
+            for strat in ["sequential", "threads", "colmajor", "tiled"]
+                if !haskey(results, strat)
+                    continue
                 end
-            end
-            
-            if !verified
-                @printf("  Verification FAILED: %s (err=%.2e)\n", strategy, max_err)
+                
+                r = results[strat]
+                min_t = minimum(r.times_ms)
+                med_t = median(r.times_ms)
+                mean_t = Statistics.mean(r.times_ms)
+                std_t = length(r.times_ms) > 1 ? std(r.times_ms) : 0.0
+                gflops = flops / (min_t / 1000) / 1e9
+                speedup = seq_time === nothing ? 1.0 : seq_time / min_t
+                efficiency = compute_efficiency(strat, speedup, Threads.nthreads())
+                
+                @printf(io, "correlation,%s,%s,%d,%.3f,%.3f,%.3f,%.3f,%.2f,%.2f,%.1f,%s\n",
+                        dataset, strat, Threads.nthreads(),
+                        min_t, med_t, mean_t, std_t, gflops, speedup, efficiency,
+                        r.verified ? "PASS" : "FAIL")
             end
         end
-        
-        result = BenchmarkResult(
-            "correlation", dataset_name, strategy, nthreads(), 1,
-            timing.times_ns, timing.allocations, flops, verified
-        )
-        record!(mc, result)
+        println("Results exported to: $filepath")
     end
-    
-    print_results(mc)
-    
-    # Export results
-    results_dir = joinpath(@__DIR__, "..", "results")
-    mkpath(results_dir)
-    
-    if config["output"] == "csv"
-        export_csv(mc, joinpath(results_dir, "correlation_$(dataset_name)_$(mc.timestamp).csv"))
-    end
-    
-    return mc
 end
 
-if abspath(PROGRAM_FILE) == @__FILE__
-    config = parse_args(ARGS)
-    run_benchmark(config)
-end
+main()
