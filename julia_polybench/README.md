@@ -8,7 +8,8 @@ State-of-the-art Julia implementations of PolyBench kernels for systematic multi
 |-----------|---------|-----------------|-------------|
 | **Cholesky** | A = L*L^T decomposition | Dependency-heavy, triangular | Medium |
 | **Correlation** | Pearson correlation matrix | Streaming, reductions | High |
-| **Jacobi-2D** | 5-point stencil iteration | Memory-bound, low arithmetic intensity | High |
+| **Jacobi-2D** | 5-point stencil iteration | Memory-bound, low arithmetic intensity | High 
+| **Nussinov** | RNA folding DP | Wavefront, irregular | Limited |
 
 ## Design Principles
 ### Column-Major Optimization
