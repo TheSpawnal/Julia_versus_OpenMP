@@ -276,7 +276,7 @@ function kernel_2mm_tasks!(alpha::Float64, beta::Float64,
     _, nj = size(B)
     _, nl = size(D)
     
-    chunk_size = max(1, ni div (2 * Threads.nthreads()))
+    chunk_size = max(1, div(ni, 2 * Threads.nthreads()))
     
     # Phase 1: tmp = alpha * A * B
     @sync begin
