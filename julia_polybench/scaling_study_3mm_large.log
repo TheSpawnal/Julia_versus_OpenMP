@@ -1,0 +1,175 @@
+======================================================================
+3MM BENCHMARK
+======================================================================
+Julia version: 1.11.5
+Threads: 1
+BLAS threads: 4
+CPU threads: 8
+Dataset: LARGE
+Dimensions: ni=800, nj=900, nk=1000, nl=1100, nm=1200
+Memory: 51.04 MB
+FLOPs: 5400000000 (5.40 GFLOPs)
+----------------------------------------------------------------------
+VERIFICATION
+----------------------------------------------------------------------
+  sequential         : PASS (max_error: 0.00e+00)
+  threads_static     : PASS (max_error: 0.00e+00)
+  threads_dynamic    : PASS (max_error: 0.00e+00)
+  tiled              : PASS (max_error: 0.00e+00)
+  blas               : FAIL (max_error: 4.95e-10)
+  tasks              : PASS (max_error: 0.00e+00)
+
+Verification FAILED. Aborting benchmark.
+
+----------------------------------------------------------------------
+BENCHMARK RESULTS
+----------------------------------------------------------------------
+Strategy               Time(ms)      Speedup  Efficiency%      GFLOP/s     Allocs
+----------------------------------------------------------------------
+sequential             887.1011        1.00x        100.0         6.09          0
+threads_static         929.8655        0.95x         95.4         5.81       1872
+threads_dynamic        931.0263        0.95x         95.3         5.80       1872
+tiled                  377.9334        2.35x        234.7        14.29       1920
+blas                    37.2108       23.84x       2384.0       145.12          0
+tasks                  914.7746        0.97x         97.0         5.90       2928
+----------------------------------------------------------------------
+======================================================================
+3MM BENCHMARK
+======================================================================
+Julia version: 1.11.5
+Threads: 2
+BLAS threads: 1
+CPU threads: 8
+Dataset: LARGE
+Dimensions: ni=800, nj=900, nk=1000, nl=1100, nm=1200
+Memory: 51.04 MB
+FLOPs: 5400000000 (5.40 GFLOPs)
+----------------------------------------------------------------------
+VERIFICATION
+----------------------------------------------------------------------
+  sequential         : PASS (max_error: 0.00e+00)
+  threads_static     : PASS (max_error: 0.00e+00)
+  threads_dynamic    : PASS (max_error: 0.00e+00)
+  tiled              : PASS (max_error: 0.00e+00)
+  blas               : FAIL (max_error: 4.95e-10)
+  tasks              : PASS (max_error: 0.00e+00)
+
+Verification FAILED. Aborting benchmark.
+
+----------------------------------------------------------------------
+BENCHMARK RESULTS
+----------------------------------------------------------------------
+Strategy               Time(ms)      Speedup  Efficiency%      GFLOP/s     Allocs
+----------------------------------------------------------------------
+sequential             908.6620        1.00x        100.0         5.94          0
+threads_static         474.7043        1.91x         95.7        11.38       3600
+threads_dynamic        475.0372        1.91x         95.6        11.37       3600
+tiled                  213.2498        4.26x        213.1        25.32       3696
+blas                   100.3986        9.05x        905.1        53.79          0
+tasks                  468.7478        1.94x         96.9        11.52       4560
+----------------------------------------------------------------------
+======================================================================
+3MM BENCHMARK
+======================================================================
+Julia version: 1.11.5
+Threads: 4
+BLAS threads: 1
+CPU threads: 8
+Dataset: LARGE
+Dimensions: ni=800, nj=900, nk=1000, nl=1100, nm=1200
+Memory: 51.04 MB
+FLOPs: 5400000000 (5.40 GFLOPs)
+----------------------------------------------------------------------
+VERIFICATION
+----------------------------------------------------------------------
+  sequential         : PASS (max_error: 0.00e+00)
+  threads_static     : PASS (max_error: 0.00e+00)
+  threads_dynamic    : PASS (max_error: 0.00e+00)
+  tiled              : PASS (max_error: 0.00e+00)
+  blas               : FAIL (max_error: 4.95e-10)
+  tasks              : PASS (max_error: 0.00e+00)
+
+Verification FAILED. Aborting benchmark.
+
+----------------------------------------------------------------------
+BENCHMARK RESULTS
+----------------------------------------------------------------------
+Strategy               Time(ms)      Speedup  Efficiency%      GFLOP/s     Allocs
+----------------------------------------------------------------------
+sequential             901.0666        1.00x        100.0         5.99          0
+threads_static         261.7828        3.44x         86.1        20.63       7008
+threads_dynamic        263.0998        3.42x         85.6        20.52       7008
+tiled                  134.6798        6.69x        167.3        40.10       7200
+blas                   102.3275        8.81x        880.6        52.77          0
+tasks                  291.3167        3.09x         77.3        18.54       7824
+----------------------------------------------------------------------
+======================================================================
+3MM BENCHMARK
+======================================================================
+Julia version: 1.11.5
+Threads: 8
+BLAS threads: 1
+CPU threads: 8
+Dataset: LARGE
+Dimensions: ni=800, nj=900, nk=1000, nl=1100, nm=1200
+Memory: 51.04 MB
+FLOPs: 5400000000 (5.40 GFLOPs)
+----------------------------------------------------------------------
+VERIFICATION
+----------------------------------------------------------------------
+  sequential         : PASS (max_error: 0.00e+00)
+  threads_static     : PASS (max_error: 0.00e+00)
+  threads_dynamic    : PASS (max_error: 0.00e+00)
+  tiled              : PASS (max_error: 0.00e+00)
+  blas               : FAIL (max_error: 4.95e-10)
+  tasks              : PASS (max_error: 0.00e+00)
+
+Verification FAILED. Aborting benchmark.
+
+----------------------------------------------------------------------
+BENCHMARK RESULTS
+----------------------------------------------------------------------
+Strategy               Time(ms)      Speedup  Efficiency%      GFLOP/s     Allocs
+----------------------------------------------------------------------
+sequential             901.5797        1.00x        100.0         5.99          0
+threads_static         174.8407        5.16x         64.5        30.89      13824
+threads_dynamic        174.4188        5.17x         64.6        30.96      13824
+tiled                  136.2748        6.62x         82.7        39.63      14208
+blas                   103.5065        8.71x        871.0        52.17          0
+tasks                  173.9341        5.18x         64.8        31.05      14352
+----------------------------------------------------------------------
+======================================================================
+3MM BENCHMARK
+======================================================================
+Julia version: 1.11.5
+Threads: 16
+BLAS threads: 1
+CPU threads: 8
+Dataset: LARGE
+Dimensions: ni=800, nj=900, nk=1000, nl=1100, nm=1200
+Memory: 51.04 MB
+FLOPs: 5400000000 (5.40 GFLOPs)
+----------------------------------------------------------------------
+VERIFICATION
+----------------------------------------------------------------------
+  sequential         : PASS (max_error: 0.00e+00)
+  threads_static     : PASS (max_error: 0.00e+00)
+  threads_dynamic    : PASS (max_error: 0.00e+00)
+  tiled              : PASS (max_error: 0.00e+00)
+  blas               : FAIL (max_error: 4.95e-10)
+  tasks              : PASS (max_error: 0.00e+00)
+
+Verification FAILED. Aborting benchmark.
+
+----------------------------------------------------------------------
+BENCHMARK RESULTS
+----------------------------------------------------------------------
+Strategy               Time(ms)      Speedup  Efficiency%      GFLOP/s     Allocs
+----------------------------------------------------------------------
+sequential             897.4007        1.00x        100.0         6.02          0
+threads_static         183.4247        4.89x         30.6        29.44      27456
+threads_dynamic        178.8257        5.02x         31.4        30.20      27456
+tiled                  143.2449        6.26x         39.2        37.70      28224
+blas                   109.0247        8.23x        823.1        49.53          0
+tasks                  187.9261        4.78x         29.8        28.73      28512
+----------------------------------------------------------------------
