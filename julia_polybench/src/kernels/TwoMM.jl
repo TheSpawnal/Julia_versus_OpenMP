@@ -1,23 +1,26 @@
-
-
 module TwoMM
 #=
 PolyBench 2MM Kernel - Julia Implementation
 Computation: D = alpha * A * B * C + beta * D
+    tmp = alpha * A * B
+    D = tmp * C + beta * D
 
 Design Principles:
 1. Zero-allocation hot paths (verified with @allocated)
-2. Column-major optimized loop order
+2. Column-major optimized loop order (j outer, i innermost)
 3. Consistent Float64 for fair OpenMP comparison
 4. @simd @inbounds on all inner loops
+5. Scalar hoisting outside SIMD loops
 
 Strategies:
-1. sequential     - Baseline with SIMD
-2. threads_static - Static scheduling over columns
-3. threads_dynamic- Dynamic scheduling for load balance
-4. tiled          - Cache-blocked with parallel outer loop
-5. blas           - BLAS mul! (reference upper bound)
-6. tasks          - Coarse-grained task parallelism
+1. sequential      - Baseline with SIMD
+2. threads_static  - Static scheduling over columns
+3. threads_dynamic - Dynamic scheduling for load balance
+4. tiled           - Cache-blocked with parallel outer loop
+5. blas            - BLAS mul! (reference upper bound)
+6. tasks           - Coarse-grained task parallelism
+
+Author: SpawnAl / Falkor collaboration
 =#
 
 using LinearAlgebra
@@ -26,8 +29,10 @@ using Base.Threads
 export init_2mm!, reset_2mm!
 export kernel_2mm_seq!, kernel_2mm_threads_static!, kernel_2mm_threads_dynamic!
 export kernel_2mm_tiled!, kernel_2mm_blas!, kernel_2mm_tasks!
-export STRATEGIES_2MM, get_kernel
+export STRATEGIES_2MM, DATASETS_2MM, get_kernel
+export flops_2mm, memory_2mm
 
+# Strategy list for iteration
 const STRATEGIES_2MM = [
     "sequential",
     "threads_static",
@@ -37,16 +42,23 @@ const STRATEGIES_2MM = [
     "tasks"
 ]
 
-const DATASETS_2MM = Dict(
-    "MINI" => (ni=16, nj=18, nk=22, nl=24),
-    "SMALL" => (ni=40, nj=50, nk=70, nl=80),
-    "MEDIUM" => (ni=180, nj=190, nk=210, nl=220),
-    "LARGE" => (ni=800, nj=900, nk=1100, nl=1200),
+# PolyBench standard dataset sizes
+const DATASETS_2MM = Dict{String, NamedTuple{(:ni, :nj, :nk, :nl), NTuple{4, Int}}}(
+    "MINI"       => (ni=16,   nj=18,   nk=22,   nl=24),
+    "SMALL"      => (ni=40,   nj=50,   nk=70,   nl=80),
+    "MEDIUM"     => (ni=180,  nj=190,  nk=210,  nl=220),
+    "LARGE"      => (ni=800,  nj=900,  nk=1100, nl=1200),
     "EXTRALARGE" => (ni=1600, nj=1800, nk=2200, nl=2400)
 )
 
 #=============================================================================
  Initialization - PolyBench compatible
+ Matrix dimensions:
+   A: ni x nk
+   B: nk x nj
+   tmp: ni x nj (intermediate)
+   C: nj x nl
+   D: ni x nl (result, also input)
 =============================================================================#
 function init_2mm!(
     alpha::Ref{Float64}, beta::Ref{Float64},
@@ -61,7 +73,7 @@ function init_2mm!(
     alpha[] = 1.5
     beta[] = 1.2
     
-    # Column-major initialization
+    # Column-major initialization (j outer, i inner for cache efficiency)
     @inbounds for j in 1:nk, i in 1:ni
         A[i, j] = ((i - 1) * (j - 1) + 1) % ni / Float64(ni)
     end
@@ -83,7 +95,7 @@ function init_2mm!(
     return nothing
 end
 
-# Reset for re-benchmarking (in-place)
+# Reset for re-benchmarking (call before each timed iteration)
 function reset_2mm!(tmp::Matrix{Float64}, D::Matrix{Float64}, D_orig::Matrix{Float64})
     fill!(tmp, 0.0)
     copyto!(D, D_orig)
@@ -95,6 +107,7 @@ end
  - Column-major loop order (j outer, i innermost)
  - @simd on innermost loop for vectorization
  - @inbounds for bounds-check elimination
+ - Scalar hoisting to avoid repeated memory access in SIMD loop
 =============================================================================#
 function kernel_2mm_seq!(
     alpha::Float64, beta::Float64,
@@ -137,7 +150,7 @@ end
 #=============================================================================
  Strategy 2: Threaded with static scheduling
  - Parallelizes over columns (j loop)
- - Zero allocations in hot path
+ - Zero allocations in hot path (verified)
  - Best for uniform workload
 =============================================================================#
 function kernel_2mm_threads_static!(
@@ -181,7 +194,7 @@ end
 #=============================================================================
  Strategy 3: Threaded with dynamic scheduling
  - Work-stealing for load balance
- - Better for irregular workloads
+ - Better for irregular workloads or NUMA systems
 =============================================================================#
 function kernel_2mm_threads_dynamic!(
     alpha::Float64, beta::Float64,
@@ -224,7 +237,7 @@ end
 #=============================================================================
  Strategy 4: Tiled/Blocked with parallel outer loop
  - Cache optimization through blocking
- - Tile size tuned for L2 cache (~256KB)
+ - Tile size tuned for L2 cache (~256KB per core typical)
  - Outer tile loop parallelized
 =============================================================================#
 function kernel_2mm_tiled!(
@@ -237,18 +250,17 @@ function kernel_2mm_tiled!(
     ni, nk = size(A)
     _, nj = size(B)
     _, nl = size(C)
-    
     ts = tile_size
     
-    # tmp = alpha * A * B (tiled, parallelized over column tiles)
+    # tmp = alpha * A * B (tiled)
     @threads :static for jj in 1:ts:nj
         j_end = min(jj + ts - 1, nj)
-        for kk in 1:ts:nk
+        @inbounds for kk in 1:ts:nk
             k_end = min(kk + ts - 1, nk)
             for ii in 1:ts:ni
                 i_end = min(ii + ts - 1, ni)
-                
-                @inbounds for j in jj:j_end
+                # Micro-kernel for tile
+                for j in jj:j_end
                     for k in kk:k_end
                         b_kj = alpha * B[k, j]
                         @simd for i in ii:i_end
@@ -260,24 +272,19 @@ function kernel_2mm_tiled!(
         end
     end
     
-    # D = beta * D + tmp * C (tiled, parallelized)
+    # D = beta * D + tmp * C (tiled)
     @threads :static for jj in 1:ts:nl
         j_end = min(jj + ts - 1, nl)
-        
-        # Scale D columns in this tile
         @inbounds for j in jj:j_end
             @simd for i in 1:ni
                 D[i, j] *= beta
             end
         end
-        
-        # Accumulate tmp * C for this tile
-        for kk in 1:ts:nj
+        @inbounds for kk in 1:ts:nj
             k_end = min(kk + ts - 1, nj)
             for ii in 1:ts:ni
                 i_end = min(ii + ts - 1, ni)
-                
-                @inbounds for j in jj:j_end
+                for j in jj:j_end
                     for k in kk:k_end
                         c_kj = C[k, j]
                         @simd for i in ii:i_end
@@ -293,10 +300,10 @@ function kernel_2mm_tiled!(
 end
 
 #=============================================================================
- Strategy 5: BLAS-accelerated
+ Strategy 5: BLAS (reference upper bound)
  - Uses optimized BLAS mul! routines
  - Reference upper bound for performance
- - Note: BLAS threading is separate from Julia threading
+ - Note: BLAS threading configured externally
 =============================================================================#
 function kernel_2mm_blas!(
     alpha::Float64, beta::Float64,
@@ -304,7 +311,7 @@ function kernel_2mm_blas!(
     tmp::Matrix{Float64}, C::Matrix{Float64},
     D::Matrix{Float64}
 )
-    # tmp = alpha * A * B + 0 * tmp
+    # tmp = alpha * A * B + 0.0 * tmp
     mul!(tmp, A, B, alpha, 0.0)
     
     # D = 1.0 * tmp * C + beta * D
@@ -383,34 +390,42 @@ function kernel_2mm_tasks!(
 end
 
 #=============================================================================
- Kernel Dispatcher
+ Kernel Dispatcher - FIXED: accepts AbstractString to handle SubString
 =============================================================================#
-function get_kernel(strategy::String)
-    kernels = Dict(
-        "sequential" => kernel_2mm_seq!,
-        "threads_static" => kernel_2mm_threads_static!,
-        "threads_dynamic" => kernel_2mm_threads_dynamic!,
-        "tiled" => kernel_2mm_tiled!,
-        "blas" => kernel_2mm_blas!,
-        "tasks" => kernel_2mm_tasks!
-    )
-    return get(kernels, strategy, kernel_2mm_seq!)
+function get_kernel(strategy::AbstractString)
+    s = lowercase(String(strategy))  # Normalize
+    
+    if s == "sequential" || s == "seq"
+        return kernel_2mm_seq!
+    elseif s == "threads_static" || s == "threads" || s == "static"
+        return kernel_2mm_threads_static!
+    elseif s == "threads_dynamic" || s == "dynamic"
+        return kernel_2mm_threads_dynamic!
+    elseif s == "tiled" || s == "blocked"
+        return kernel_2mm_tiled!
+    elseif s == "blas"
+        return kernel_2mm_blas!
+    elseif s == "tasks"
+        return kernel_2mm_tasks!
+    else
+        error("Unknown strategy: $strategy. Available: $(join(STRATEGIES_2MM, ", "))")
+    end
 end
 
 #=============================================================================
  FLOPs Calculation
+ tmp = A*B: 2*ni*nj*nk (multiply-add for each element)
+ D = tmp*C: 2*ni*nl*nj
 =============================================================================#
 function flops_2mm(ni, nj, nk, nl)
-    # tmp = alpha * A * B: 2*ni*nj*nk (mul + add per element)
-    # D = beta*D + tmp*C: 2*ni*nl*nj + 2*ni*nl (scale + add)
-    return 2*ni*nj*nk + 2*ni*nl*nj + 2*ni*nl
+    return 2 * ni * nj * nk + 2 * ni * nl * nj
 end
 
 #=============================================================================
  Memory Calculation (bytes)
+ A: ni*nk, B: nk*nj, tmp: ni*nj, C: nj*nl, D: ni*nl
 =============================================================================#
 function memory_2mm(ni, nj, nk, nl)
-    # A: ni*nk, B: nk*nj, tmp: ni*nj, C: nj*nl, D: ni*nl
     return (ni*nk + nk*nj + ni*nj + nj*nl + ni*nl) * sizeof(Float64)
 end
 
