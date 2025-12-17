@@ -9,6 +9,8 @@ include("kernels/Cholesky.jl")
 include("kernels/Correlation.jl")
 include("kernels/Jacobi2D.jl")
 include("kernels/Nussinov.jl")  # Add Nussinov
+include("kernels/TwoMM.jl")
+include("kernels/ThreeMM.jl")
 
 # Import and export submodules
 using .Config
@@ -17,10 +19,12 @@ using .Cholesky
 using .Correlation
 using .Jacobi2D
 using .Nussinov  # Import Nussinov
+using .TwoMM
+using .ThreeMM
 
 # Export all submodules
 export Config, Metrics
-export Cholesky, Correlation, Jacobi2D, Nussinov  # Export Nussinov
+export Cholesky, Correlation, Jacobi2D, Nussinov, ThreeMM, TwoMM  # Export Nussinov
 
 # Re-export commonly used functions from Config
 export configure_blas_threads, print_system_info
