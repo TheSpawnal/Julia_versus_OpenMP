@@ -1,5 +1,3 @@
-
-
 #!/usr/bin/env julia
 #=
 3MM Benchmark Runner - REDESIGNED
@@ -340,8 +338,8 @@ function kernel_3mm_tasks!(A::Matrix{Float64}, B::Matrix{Float64},
     _, nm = size(C)
     _, nl = size(D)
     
-    chunk_size_e = max(1, ni div (2 * Threads.nthreads()))
-    chunk_size_f = max(1, nj div (2 * Threads.nthreads()))
+    chunk_size_e = max(1, div(ni, 2 * Threads.nthreads()))
+    chunk_size_f = max(1, div(nj, 2 * Threads.nthreads()))
     
     # Phase 1: E = A * B and F = C * D can run concurrently
     @sync begin
