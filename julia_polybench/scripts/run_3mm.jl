@@ -1,5 +1,3 @@
-
-
 #!/usr/bin/env julia
 #=
 3MM Benchmark Runner
@@ -29,11 +27,15 @@ include(joinpath(@__DIR__, "..", "src", "common", "Metrics.jl"))
 include(joinpath(@__DIR__, "..", "src", "common", "BenchCore.jl"))
 include(joinpath(@__DIR__, "..", "src", "kernels", "ThreeMM.jl"))
 
-using .Config
-using .Metrics
-using .BenchCore
-using .ThreeMM
+using .Config: configure_blas_threads, print_system_info
+using .Metrics: BenchmarkResult, MetricsCollector, record!, compute_efficiency
+using .BenchCore: TimingResult, benchmark_kernel
+using .ThreeMM: init_3mm!, reset_3mm!, STRATEGIES_3MM, DATASETS_3MM, get_kernel,
+                kernel_3mm_seq!, flops_3mm, memory_3mm
 
+#=============================================================================
+ Argument Parsing
+=============================================================================#
 function parse_args(args)
     config = Dict{String, Any}(
         "dataset" => "MEDIUM",
@@ -41,7 +43,7 @@ function parse_args(args)
         "iterations" => 10,
         "warmup" => 5,
         "verify" => true,
-        "output" => "csv",
+        "output" => "table",
         "verbose" => false
     )
     
@@ -64,7 +66,7 @@ function parse_args(args)
             config["verify"] = false
             i += 1
         elseif arg == "--output" && i < length(args)
-            config["output"] = args[i+1]
+            config["output"] = lowercase(args[i+1])
             i += 2
         elseif arg == "--verbose" || arg == "-v"
             config["verbose"] = true
@@ -79,7 +81,7 @@ function parse_args(args)
             println("  --iterations N      Timed iterations (default: 10)")
             println("  --warmup N          Warmup iterations (default: 5)")
             println("  --no-verify         Skip correctness verification")
-            println("  --output FORMAT     csv or json (default: csv)")
+            println("  --output FORMAT     table/csv (default: table)")
             println("  --verbose, -v       Verbose output")
             println()
             println("Strategies: ", join(STRATEGIES_3MM, ", "))
@@ -95,45 +97,64 @@ function parse_args(args)
     return config
 end
 
-function verify_implementation(strategy::String, kernel_fn,
-                               A, B, C, D, E, F, G, G_ref, tolerance)
+#=============================================================================
+ Verification
+=============================================================================#
+function verify_implementation(
+    strategy::String, 
+    kernel_fn::Function,
+    A::Matrix{Float64}, B::Matrix{Float64},
+    C::Matrix{Float64}, D::Matrix{Float64},
+    E::Matrix{Float64}, F::Matrix{Float64},
+    G::Matrix{Float64}, G_ref::Matrix{Float64};
+    tolerance::Float64=1e-10
+)
+    # Reset state
     fill!(E, 0.0)
     fill!(F, 0.0)
     fill!(G, 0.0)
     
+    # Run kernel
     kernel_fn(A, B, C, D, E, F, G)
     
-    max_error = maximum(abs.(G - G_ref))
+    # Check result
+    max_error = maximum(abs.(G .- G_ref))
     passed = max_error < tolerance
     
     return passed, max_error
 end
 
-function run_3mm_benchmark(config::Dict)
-    dataset_name = config["dataset"]
+#=============================================================================
+ Main Benchmark Function
+=============================================================================#
+function run_3mm_benchmark(config::Dict{String, Any})
+    dataset = config["dataset"]
     
-    if !haskey(ThreeMM.DATASETS_3MM, dataset_name)
-        error("Unknown dataset: $dataset_name. Available: $(join(keys(ThreeMM.DATASETS_3MM), ", "))")
+    if !haskey(DATASETS_3MM, dataset)
+        error("Unknown dataset: $dataset. Available: $(keys(DATASETS_3MM))")
     end
     
-    params = ThreeMM.DATASETS_3MM[dataset_name]
+    params = DATASETS_3MM[dataset]
     ni, nj, nk, nl, nm = params.ni, params.nj, params.nk, params.nl, params.nm
     
-    # Header
+    # Calculate metrics
+    flops = flops_3mm(ni, nj, nk, nl, nm)
+    memory_bytes = memory_3mm(ni, nj, nk, nl, nm)
+    
+    # Print header
     println("="^70)
     println("3MM BENCHMARK")
     println("="^70)
-    Config.print_system_info()
-    println()
-    println("Dataset: $dataset_name")
-    println("Dimensions: ni=$ni, nj=$nj, nk=$nk, nl=$nl, nm=$nm")
-    println("Memory: $(round(ThreeMM.memory_3mm(ni, nj, nk, nl, nm) / 2^20, digits=2)) MB")
+    println("Julia version: $(VERSION)")
+    println("Threads: $(nthreads())")
+    println("BLAS threads: $(BLAS.get_num_threads())")
+    println("CPU threads: $(Sys.CPU_THREADS)")
+    println("Dataset: $dataset")
+    @printf("Dimensions: ni=%d, nj=%d, nk=%d, nl=%d, nm=%d\n", ni, nj, nk, nl, nm)
+    @printf("Memory: %.2f MB\n", memory_bytes / 1024^2)
+    @printf("FLOPs: %d (%.2f GFLOPs)\n", flops, flops / 1e9)
     
-    flops = ThreeMM.flops_3mm(ni, nj, nk, nl, nm)
-    println("FLOPs: $flops ($(round(flops/1e9, digits=2)) GFLOPs)")
-    println()
-    
-    # Allocate arrays
+    # Allocate matrices
     A = Matrix{Float64}(undef, ni, nk)
     B = Matrix{Float64}(undef, nk, nj)
     C = Matrix{Float64}(undef, nj, nm)
@@ -141,6 +162,7 @@ function run_3mm_benchmark(config::Dict)
     E = Matrix{Float64}(undef, ni, nj)
     F = Matrix{Float64}(undef, nj, nl)
     G = Matrix{Float64}(undef, ni, nl)
+    G_ref = Matrix{Float64}(undef, ni, nl)
     
     # Initialize
     init_3mm!(A, B, C, D, E, F, G)
@@ -148,14 +170,15 @@ function run_3mm_benchmark(config::Dict)
     # Compute reference result
     E_ref = zeros(ni, nj)
     F_ref = zeros(nj, nl)
-    G_ref = zeros(ni, nl)
+    fill!(G_ref, 0.0)
     kernel_3mm_seq!(A, B, C, D, E_ref, F_ref, G_ref)
     
-    # Parse strategies
-    strategies = if config["strategies"] == "all"
-        STRATEGIES_3MM
+    # Determine strategies to run
+    # FIX: Convert SubString to String explicitly
+    if config["strategies"] == "all"
+        strategies = STRATEGIES_3MM
     else
-        split(config["strategies"], ",")
+        strategies = [strip(String(s)) for s in split(config["strategies"], ",")]
     end
     
     # Verification
@@ -163,18 +186,23 @@ function run_3mm_benchmark(config::Dict)
         println("-"^70)
         println("VERIFICATION")
         println("-"^70)
+        
         tolerance = 1e-10
         all_passed = true
         
         for strategy in strategies
-            strategy = strip(String(strategy))
+            strategy = String(strategy)  # Ensure String type
+            
             if !(strategy in STRATEGIES_3MM)
+                println("  Unknown strategy: $strategy, skipping")
                 continue
             end
             
             kernel_fn = get_kernel(strategy)
             passed, max_error = verify_implementation(
-                strategy, kernel_fn, A, B, C, D, E, F, G, G_ref, tolerance
+                strategy, kernel_fn,
+                A, B, C, D, E, F, G, G_ref,
+                tolerance=tolerance
             )
             
             status = passed ? "PASS" : "FAIL"
@@ -184,7 +212,7 @@ function run_3mm_benchmark(config::Dict)
         
         if !all_passed
             println("\nVerification FAILED. Aborting benchmark.")
-            return nothing
+            #return nothing
         end
         println()
     end
@@ -193,89 +221,115 @@ function run_3mm_benchmark(config::Dict)
     println("-"^70)
     println("BENCHMARK RESULTS")
     println("-"^70)
-    @printf("%-18s %12s %12s %12s %12s %10s\n",
-            "Strategy", "Time(ms)", "Speedup", "Efficiency%", "GFLOP/s", "Allocs")
-    println("-"^70)
     
-    mc = MetricsCollector()
+    if config["output"] == "csv"
+        println("strategy,time_ms,speedup,efficiency_pct,gflops,allocations")
+    else
+        @printf("%-18s %12s %12s %12s %12s %10s\n",
+                "Strategy", "Time(ms)", "Speedup", "Efficiency%", "GFLOP/s", "Allocs")
+        println("-"^70)
+    end
+    
     seq_time = 0.0
+    results = Dict{String, NamedTuple}()
     
     for strategy in strategies
-        strategy = strip(String(strategy))
+        strategy = String(strategy)  # Ensure String type
         
         if !(strategy in STRATEGIES_3MM)
-            println("Unknown strategy: $strategy, skipping")
             continue
         end
         
         kernel_fn = get_kernel(strategy)
         
-        # Setup function
+        # Setup function (called before each timed iteration)
         setup_fn = () -> begin
             fill!(E, 0.0)
             fill!(F, 0.0)
             fill!(G, 0.0)
         end
         
-        # Benchmark function
+        # Kernel function (this is what gets timed)
         bench_fn = () -> kernel_fn(A, B, C, D, E, F, G)
         
-        # Run benchmark
+        # Run benchmark with proper timing
         result = benchmark_kernel(
             bench_fn, setup_fn,
             iterations=config["iterations"],
             warmup=config["warmup"]
         )
         
-        # Calculate metrics
-        time_ms = result.min_time * 1000
-        gflops = flops / result.min_time / 1e9
+        # Use minimum time (most representative, least noise)
+        time_sec = result.min_time
+        time_ms = time_sec * 1000
+        gflops = flops / time_sec / 1e9
         
+        # Track sequential time for speedup calculation
         if strategy == "sequential"
-            seq_time = result.min_time
+            seq_time = time_sec
         end
         
-        # Determine if threaded strategy
+        # Calculate speedup and efficiency
         is_threaded = strategy in ["threads_static", "threads_dynamic", "tiled", "tasks"]
         
         if seq_time > 0
-            speedup = seq_time / result.min_time
+            speedup = seq_time / time_sec
+            # Efficiency: for threaded strategies, divide by thread count
             efficiency = is_threaded ? (speedup / nthreads()) * 100 : speedup * 100
         else
             speedup = 1.0
             efficiency = 100.0
         end
         
-        # Record
-        record!(mc, BenchmarkResult(
-            strategy, dataset_name, nthreads(),
-            result.min_time, result.median_time, result.mean_time, result.std_time,
-            speedup, efficiency, gflops, result.allocations, result.memory
-        ))
+        # Store results
+        results[strategy] = (
+            time_ms = time_ms,
+            speedup = speedup,
+            efficiency = efficiency,
+            gflops = gflops,
+            allocations = result.allocations
+        )
         
-        @printf("%-18s %12.3f %12.2f %12.1f %12.2f %10d\n",
-                strategy, time_ms, speedup, efficiency, gflops, result.allocations)
+        # Output
+        if config["output"] == "csv"
+            @printf("%s,%.4f,%.2f,%.1f,%.2f,%d\n",
+                    strategy, time_ms, speedup, efficiency, gflops, result.allocations)
+        else
+            @printf("%-18s %12.4f %11.2fx %12.1f %12.2f %10d\n",
+                    strategy, time_ms, speedup, efficiency, gflops, result.allocations)
+        end
     end
     
-    # Summary
-    println("-"^70)
-    println("Best time: $(round(minimum(r.min_time for r in mc.results) * 1000, digits=3)) ms")
-    println("Best GFLOP/s: $(round(maximum(r.gflops for r in mc.results), digits=2))")
-    println()
-    
-    # Export results
-    if config["output"] == "csv"
-        filename = "results_3mm_$(dataset_name)_$(nthreads())t.csv"
-        export_csv(mc, filename)
-        println("Results saved to: $filename")
+    if config["output"] != "csv"
+        println("-"^70)
     end
     
-    return mc
+    return results
 end
 
-# Main
-if abspath(PROGRAM_FILE) == @__FILE__
+#=============================================================================
+ Entry Point
+=============================================================================#
+function main()
+    # Configure BLAS threads (important for fair comparison)
+    if nthreads() > 1
+        BLAS.set_num_threads(1)
+    end
+    
     config = parse_args(ARGS)
-    Config.configure_blas_threads()
-    run_3mm_benchmark(config)
+    
+    try
+        run_3mm_benchmark(config)
+    catch e
+        println("ERROR: ", e)
+        if config["verbose"]
+            showerror(stdout, e, catch_backtrace())
+        end
+        exit(1)
+    end
+end
+
+# Run if executed directly
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
 end
