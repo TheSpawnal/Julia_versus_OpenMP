@@ -10,7 +10,6 @@ Usage:
   julia -t 8 run_3mm.jl --dataset MEDIUM
   julia -t 16 run_3mm.jl --dataset LARGE --strategies threads_static,blas
   julia -t 8 run_3mm.jl --dataset MEDIUM --output csv
-
 DAS-5 SLURM:
   srun -N 1 -c 16 --time=01:00:00 julia -t 16 run_3mm.jl --dataset LARGE
 =#
