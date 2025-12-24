@@ -7,6 +7,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --partition=defq
+#SBATCH -C cpunode
 
 # ==============================================================================
 # DAS-5 Julia PolyBench - All Benchmarks at MEDIUM Dataset
