@@ -1,6 +1,0 @@
-benchmark,dataset,strategy,threads,min_ms,median_ms,mean_ms,std_ms,gflops,speedup,efficiency,verified
-cholesky,SMALL,sequential,4,0.255,0.261,0.267,0.019,2.26,1.00,100.0,PASS
-cholesky,SMALL,simd,4,0.280,0.281,0.283,0.006,2.06,0.91,91.0,PASS
-cholesky,SMALL,threads,4,0.374,0.399,0.408,0.035,1.54,0.68,17.0,FAIL
-cholesky,SMALL,blas,4,0.051,0.053,0.059,0.015,11.20,4.96,495.5,PASS
-cholesky,SMALL,tiled,4,0.293,0.299,0.312,0.026,1.96,0.87,86.9,FAIL

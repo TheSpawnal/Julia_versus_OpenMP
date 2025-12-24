@@ -1,5 +1,0 @@
-benchmark,dataset,strategy,threads,min_ms,median_ms,mean_ms,std_ms,gflops,speedup,efficiency,verified
-correlation,MEDIUM,sequential,8,8.835,9.221,9.261,0.303,1.87,1.00,100.0,PASS
-correlation,MEDIUM,threads,8,2.571,2.793,2.917,0.418,6.43,3.44,43.0,PASS
-correlation,MEDIUM,colmajor,8,2.134,2.688,2.666,0.284,7.75,4.14,414.0,PASS
-correlation,MEDIUM,tiled,8,3.916,4.207,4.201,0.191,4.22,2.26,28.2,PASS
