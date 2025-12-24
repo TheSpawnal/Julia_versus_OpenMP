@@ -28,7 +28,7 @@
 
 # Load modules
 module load prun
-module load julia/1.10
+module load julia/1.11.4
 
 # Parse arguments
 BENCHMARK=${1:-"2mm"}
