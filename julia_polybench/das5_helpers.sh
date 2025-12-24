@@ -13,7 +13,7 @@ jl_submit() {
     sbatch --job-name="jl_${bench}" \
            --output="${bench}_%j.out" \
            --time=00:15:00 \
-           -N 1 --cpus-per-task=${threads} --partition=defq \
+           -N 1 --cpus-per-task=${threads} --partition=defq -C cpunode \
            --wrap=". /etc/bashrc; . /etc/profile.d/lmod.sh; module load prun julia/1.10; export JULIA_NUM_THREADS=${threads}; export OPENBLAS_NUM_THREADS=1; cd $JULIA_PROJECT_DIR; julia -t ${threads} scripts/run_${bench}.jl --dataset ${dataset} --output csv"
     
     echo "Submitted: $bench @ $dataset with $threads threads"
