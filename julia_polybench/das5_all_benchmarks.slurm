@@ -21,7 +21,7 @@
 
 # Load modules
 module load prun
-module load julia/1.10 2>/dev/null || module load julia
+module load julia/1.11.4 2>/dev/null || module load julia
 
 # Verify Julia
 if ! command -v julia &> /dev/null; then
