@@ -22,6 +22,9 @@ using LinearAlgebra
 using Statistics
 using Printf
 using Dates
+using Profile  # Required at top level for @profile macro
+using ProfileView
+using ProfileSVG
 
 #=============================================================================
  BLAS Configuration - MUST happen before any BLAS operations
@@ -582,34 +585,43 @@ function main()
     # Profiling (if requested)
     if do_profile
         println("\nGenerating flame graph profile...")
+        
+        # Profile threads_static (most common parallel strategy)
+        kernel! = get_kernel("threads_static")
+        
+        # Warmup
+        for _ in 1:3
+            fill!(tmp, 0.0)
+            copyto!(D, D_orig)
+            kernel!(alpha[], beta[], A, B, tmp, C, D)
+        end
+        
+        Profile.clear()
+        @profile for _ in 1:50
+            fill!(tmp, 0.0)
+            copyto!(D, D_orig)
+            kernel!(alpha[], beta[], A, B, tmp, C, D)
+        end
+        
+        # Try to save as SVG if ProfileSVG is available
+        timestamp = Dates.format(now(), "yyyymmdd_HHMMSS")
         try
-            using Profile
-            using ProfileSVG
-            
-            # Profile threads_static (most common parallel strategy)
-            kernel! = get_kernel("threads_static")
-            
-            # Warmup
-            for _ in 1:3
-                fill!(tmp, 0.0)
-                copyto!(D, D_orig)
-                kernel!(alpha[], beta[], A, B, tmp, C, D)
-            end
-            
-            Profile.clear()
-            @profile for _ in 1:50
-                fill!(tmp, 0.0)
-                copyto!(D, D_orig)
-                kernel!(alpha[], beta[], A, B, tmp, C, D)
-            end
-            
-            timestamp = Dates.format(now(), "yyyymmdd_HHMMSS")
+            @eval using ProfileSVG
             svg_path = "results/flamegraph_2mm_$(dataset)_$(timestamp).svg"
             ProfileSVG.save(svg_path)
-            println("Flame graph: $svg_path")
+            println("Flame graph saved: $svg_path")
         catch e
-            println("Profiling requires ProfileSVG.jl: Pkg.add(\"ProfileSVG\")")
-            println("Error: $e")
+            # Fallback: print profile to console
+            println("ProfileSVG not available, printing profile summary:")
+            println("(Install with: using Pkg; Pkg.add(\"ProfileSVG\"))")
+            Profile.print(maxdepth=10, mincount=100)
+            
+            # Also save flat profile to file
+            flat_path = "results/profile_2mm_$(dataset)_$(timestamp).txt"
+            open(flat_path, "w") do io
+                Profile.print(io, maxdepth=15)
+            end
+            println("Profile text saved: $flat_path")
         end
     end
     
