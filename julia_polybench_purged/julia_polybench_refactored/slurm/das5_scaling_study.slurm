@@ -43,7 +43,7 @@ DATASET="${2:-LARGE}"
 THREAD_COUNTS="1 2 4 8 16"
 
 # Project paths
-PROJECT_DIR="$HOME/Julia_versus_OpenMP/julia_polybench"
+PROJECT_DIR="$HOME/Julia_versus_OpenMP/julia_polybench_purged/julia_polybench_refactored"
 RESULTS_DIR="$PROJECT_DIR/results"
 mkdir -p "$RESULTS_DIR"
 
