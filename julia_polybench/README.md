@@ -199,7 +199,7 @@ benchmark,dataset,strategy,threads,min_ms,median_ms,mean_ms,std_ms,gflops,speedu
 
 ---
 
-## DAS-5 Cluster Deployment
+## DAS-5 Cluster Deployment Overview (please refer to advanced_das5_deployment_commands.md in the project file)
 
 ### Node Specifications
 
