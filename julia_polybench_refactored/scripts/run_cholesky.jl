@@ -30,21 +30,28 @@ const DATASET_SIZES = Dict(
 # FLOPs calculation
 flops_cholesky(n) = Float64(n)^3 / 3
 
-# Strategy classification for efficiency calculation
-# Key insight: efficiency = speedup * 100 for single-threaded strategies
-#              efficiency = (speedup / threads) * 100 for multi-threaded strategies
-const THREADED_STRATEGIES = Set(["threads", "threaded", "parallel"])
+# # Strategy classification for efficiency calculation
+# # Key insight: efficiency = speedup * 100 for single-threaded strategies
+# #              efficiency = (speedup / threads) * 100 for multi-threaded strategies
+# const THREADED_STRATEGIES = Set(["threads", "threaded", "parallel"])
 
-function compute_efficiency(strategy::String, speedup::Float64, nthreads::Int)
-    if lowercase(strategy) in THREADED_STRATEGIES
-        # Multi-threaded: efficiency = (speedup / threads) * 100
-        return (speedup / max(nthreads, 1)) * 100.0
-    else
-        # Single-threaded (sequential, simd, blas, tiled): efficiency = speedup * 100
-        return speedup * 100.0
+# function compute_efficiency(strategy::String, speedup::Float64, nthreads::Int)
+#     if lowercase(strategy) in THREADED_STRATEGIES
+#         # Multi-threaded: efficiency = (speedup / threads) * 100
+#         return (speedup / max(nthreads, 1)) * 100.0
+#     else
+#         # Single-threaded (sequential, simd, blas, tiled): efficiency = speedup * 100
+#         return speedup * 100.0
+#     end
+# end
+const PARALLEL_STRATEGIES = Set(["threads", "threaded", "parallel"])
+
+function compute_efficiency(strategy::String, speedup::Float64, nthreads::Int)::Float64
+    if !(lowercase(strategy) in PARALLEL_STRATEGIES)
+        return NaN
     end
+    return (speedup / max(nthreads, 1)) * 100.0
 end
-
 #=============================================================================
  MATRIX INITIALIZATION - CRITICAL FOR CHOLESKY
  Must create a symmetric positive-definite (SPD) matrix
@@ -525,8 +532,11 @@ function main()
         speedup = seq_time === nothing ? 1.0 : seq_time / min_t
         efficiency = compute_efficiency(strat, speedup, Threads.nthreads())
         
-        @printf("%-16s | %10.3f | %10.3f | %10.3f | %8.2f | %8.2fx | %6.1f\n",
-                strat, min_t, med_t, mean_t, gflops, speedup, efficiency)
+        # @printf("%-16s | %10.3f | %10.3f | %10.3f | %8.2f | %8.2fx | %6.1f\n",
+        #         strat, min_t, med_t, mean_t, gflops, speedup, efficiency)
+        eff_str = isnan(efficiency) ? "  N/A" : @sprintf("%6.1f", efficiency)
+        @printf("%-16s | %10.3f | %10.3f | %10.3f | %8.2f | %8.2fx | %s\n",
+            strat, min_t, med_t, mean_t, gflops, speedup, eff_str)
     end
     println("-"^90)
     
@@ -553,9 +563,14 @@ function main()
                 speedup = seq_time === nothing ? 1.0 : seq_time / min_t
                 efficiency = compute_efficiency(strat, speedup, Threads.nthreads())
                 
-                @printf(io, "cholesky,%s,%s,%d,%.3f,%.3f,%.3f,%.3f,%.2f,%.2f,%.1f,%s\n",
+                # @printf(io, "cholesky,%s,%s,%d,%.3f,%.3f,%.3f,%.3f,%.2f,%.2f,%.1f,%s\n",
+                #         dataset, strat, Threads.nthreads(),
+                #         min_t, med_t, mean_t, std_t, gflops, speedup, efficiency,
+                #         r.verified ? "PASS" : "FAIL")
+                eff_str = isnan(efficiency) ? "" : @sprintf("%.1f", efficiency)
+                @printf(io, "correlation,%s,%s,%d,%.3f,%.3f,%.3f,%.3f,%.2f,%.2f,%s,%s\n",
                         dataset, strat, Threads.nthreads(),
-                        min_t, med_t, mean_t, std_t, gflops, speedup, efficiency,
+                        min_t, med_t, mean_t, std_t, gflops, speedup, eff_str,
                         r.verified ? "PASS" : "FAIL")
             end
         end
