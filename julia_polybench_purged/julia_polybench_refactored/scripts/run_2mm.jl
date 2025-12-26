@@ -1,6 +1,6 @@
 #!/usr/bin/env julia
 #=
-2MM Benchmark Runner - REFACTORED VERSION
+2MM Benchmark Runner - CLEAN VERSION
 Computation: D = alpha * A * B * C + beta * D
 
 USAGE:
@@ -8,32 +8,25 @@ USAGE:
   julia -t 16 run_2mm.jl --dataset LARGE --output csv
   julia -t 8 run_2mm.jl --strategies sequential,threads_static,blas
 
-DAS-5 SLURM:
+DAS-5 SLURM (16 cores per node, dual Xeon E5-2630-v3):
   srun -N 1 -c 16 --time=01:00:00 julia -t 16 run_2mm.jl --dataset LARGE
 
-For EXTRALARGE datasets (longer runtime):
-  sbatch --time=02:00:00 das5_extralarge.slurm 2mm
-
-Flame Graph Profiling (add --profile flag):
-  julia -t 8 run_2mm.jl --dataset LARGE --profile
+NOTE: ProfileView/ProfileSVG removed from top-level to avoid errors when not installed.
+      Use --profile flag for optional profiling (requires ProfileSVG installed).
 =#
 
 using LinearAlgebra
 using Statistics
 using Printf
 using Dates
-using Profile  # Required at top level for @profile macro
-using ProfileView
-using ProfileSVG
+using Profile  # Built-in, always available
 
-#=============================================================================
- BLAS Configuration - MUST happen before any BLAS operations
-=============================================================================#
+# BLAS configuration - MUST happen before any BLAS operations
 function configure_blas_threads(;for_blas_benchmark::Bool=false)
     if for_blas_benchmark
-        BLAS.set_num_threads(Sys.CPU_THREADS)
+        BLAS.set_num_threads(min(16, Sys.CPU_THREADS))  # DAS-5 has 16 physical cores
     elseif Threads.nthreads() > 1
-        BLAS.set_num_threads(1)
+        BLAS.set_num_threads(1)  # Avoid thread oversubscription
     else
         BLAS.set_num_threads(min(8, Sys.CPU_THREADS))
     end
@@ -41,9 +34,7 @@ end
 
 configure_blas_threads()
 
-#=============================================================================
- Dataset Sizes - PolyBench Standard
-=============================================================================#
+# Dataset sizes - PolyBench standard
 const DATASET_SIZES = Dict(
     "MINI"       => (ni=16,   nj=18,   nk=22,   nl=24),
     "SMALL"      => (ni=40,   nj=50,   nk=70,   nl=80),
@@ -52,41 +43,23 @@ const DATASET_SIZES = Dict(
     "EXTRALARGE" => (ni=1600, nj=1800, nk=2200, nl=2400)
 )
 
-#=============================================================================
- FLOPs and Memory Calculations
-=============================================================================#
-function flops_2mm(ni, nj, nk, nl)
-    return 2.0 * ni * nj * nk + 2.0 * ni * nl * nj + Float64(ni * nl)
-end
+# FLOPs calculation
+flops_2mm(ni, nj, nk, nl) = 2.0 * ni * nj * nk + 2.0 * ni * nl * nj + Float64(ni * nl)
+memory_bytes_2mm(ni, nj, nk, nl) = (ni*nk + nk*nj + ni*nj + nj*nl + 2*ni*nl) * sizeof(Float64)
 
-function memory_bytes_2mm(ni, nj, nk, nl)
-    return (ni*nk + nk*nj + ni*nj + nj*nl + 2*ni*nl) * sizeof(Float64)
-end
-
-#=============================================================================
- Strategy Classification
-=============================================================================#
+# Strategy classification for parallel efficiency
 const PARALLEL_STRATEGIES = Set(["threads_static", "threads_dynamic", "tiled", "tasks"])
-const NON_PARALLEL_STRATEGIES = Set(["sequential", "blas"])
-const STRATEGY_ORDER = ["sequential", "threads_static", "threads_dynamic", "tiled", "blas", "tasks"]
+is_parallel_strategy(s::AbstractString) = lowercase(String(s)) in PARALLEL_STRATEGIES
 
-function is_parallel_strategy(strategy::String)::Bool
-    return lowercase(strategy) in PARALLEL_STRATEGIES
-end
-
-function compute_parallel_efficiency(strategy::String, speedup::Float64, threads::Int)::Union{Float64, Nothing}
-    if !is_parallel_strategy(strategy)
-        return nothing  # Not applicable
-    end
-    if threads <= 0
-        return nothing
+function compute_parallel_efficiency(strategy::AbstractString, speedup::Float64, threads::Int)
+    if !is_parallel_strategy(strategy) || threads <= 0
+        return NaN  # Not applicable for non-parallel strategies
     end
     return (speedup / threads) * 100.0
 end
 
-#=============================================================================
- Local BenchmarkResult Struct
-=============================================================================#
+const STRATEGY_ORDER = ["sequential", "threads_static", "threads_dynamic", "tiled", "blas", "tasks"]
+
 struct BenchmarkResult
     strategy::String
     times_ms::Vector{Float64}
@@ -95,9 +68,7 @@ struct BenchmarkResult
     allocations::Int
 end
 
-#=============================================================================
- Data Initialization (PolyBench standard)
-=============================================================================#
+# Initialization - PolyBench compatible
 function init_2mm!(alpha::Ref{Float64}, beta::Ref{Float64},
                    A::Matrix{Float64}, B::Matrix{Float64},
                    tmp::Matrix{Float64}, C::Matrix{Float64},
@@ -112,28 +83,20 @@ function init_2mm!(alpha::Ref{Float64}, beta::Ref{Float64},
     @inbounds for j in 1:nk, i in 1:ni
         A[i, j] = ((i - 1) * (j - 1) + 1) % ni / Float64(ni)
     end
-    
     @inbounds for j in 1:nj, i in 1:nk
         B[i, j] = (i - 1) * j % nj / Float64(nj)
     end
-    
     @inbounds for j in 1:nl, i in 1:nj
         C[i, j] = ((i - 1) * (j + 2) + 1) % nl / Float64(nl)
     end
-    
     @inbounds for j in 1:nl, i in 1:ni
         D[i, j] = (i - 1) * (j + 1) % nk / Float64(nk)
     end
-    
     fill!(tmp, 0.0)
     return nothing
 end
 
-#=============================================================================
- Kernel Implementations
-=============================================================================#
-
-# Sequential baseline
+# Kernel implementations (inline for self-contained script)
 function kernel_2mm_seq!(alpha, beta, A, B, tmp, C, D)
     ni, nk = size(A)
     _, nj = size(B)
@@ -147,7 +110,6 @@ function kernel_2mm_seq!(alpha, beta, A, B, tmp, C, D)
             end
         end
     end
-    
     @inbounds for j in 1:nl
         @simd for i in 1:ni
             D[i, j] *= beta
@@ -162,7 +124,6 @@ function kernel_2mm_seq!(alpha, beta, A, B, tmp, C, D)
     return nothing
 end
 
-# Threads static
 function kernel_2mm_threads_static!(alpha, beta, A, B, tmp, C, D)
     ni, nk = size(A)
     _, nj = size(B)
@@ -176,7 +137,6 @@ function kernel_2mm_threads_static!(alpha, beta, A, B, tmp, C, D)
             end
         end
     end
-    
     Threads.@threads :static for j in 1:nl
         @inbounds begin
             @simd for i in 1:ni
@@ -193,7 +153,6 @@ function kernel_2mm_threads_static!(alpha, beta, A, B, tmp, C, D)
     return nothing
 end
 
-# Threads dynamic
 function kernel_2mm_threads_dynamic!(alpha, beta, A, B, tmp, C, D)
     ni, nk = size(A)
     _, nj = size(B)
@@ -207,7 +166,6 @@ function kernel_2mm_threads_dynamic!(alpha, beta, A, B, tmp, C, D)
             end
         end
     end
-    
     Threads.@threads :dynamic for j in 1:nl
         @inbounds begin
             @simd for i in 1:ni
@@ -224,7 +182,6 @@ function kernel_2mm_threads_dynamic!(alpha, beta, A, B, tmp, C, D)
     return nothing
 end
 
-# Tiled
 function kernel_2mm_tiled!(alpha, beta, A, B, tmp, C, D; tile_size::Int=64)
     ni, nk = size(A)
     _, nj = size(B)
@@ -274,14 +231,12 @@ function kernel_2mm_tiled!(alpha, beta, A, B, tmp, C, D; tile_size::Int=64)
     return nothing
 end
 
-# BLAS
 function kernel_2mm_blas!(alpha, beta, A, B, tmp, C, D)
     mul!(tmp, A, B, alpha, 0.0)
     mul!(D, tmp, C, 1.0, beta)
     return nothing
 end
 
-# Tasks
 function kernel_2mm_tasks!(alpha, beta, A, B, tmp, C, D; num_tasks::Int=Threads.nthreads())
     ni, nk = size(A)
     _, nj = size(B)
@@ -330,11 +285,8 @@ function kernel_2mm_tasks!(alpha, beta, A, B, tmp, C, D; num_tasks::Int=Threads.
     return nothing
 end
 
-#=============================================================================
- Get Kernel by Name
-=============================================================================#
-function get_kernel(name::String)
-    name_lower = lowercase(name)
+function get_kernel(name::AbstractString)
+    name_lower = lowercase(String(name))
     kernels = Dict(
         "sequential" => kernel_2mm_seq!,
         "threads_static" => kernel_2mm_threads_static!,
@@ -346,9 +298,6 @@ function get_kernel(name::String)
     return get(kernels, name_lower, nothing)
 end
 
-#=============================================================================
- Benchmark Runner
-=============================================================================#
 function run_benchmark(kernel!, alpha::Float64, beta::Float64,
                        A::Matrix{Float64}, B::Matrix{Float64},
                        tmp::Matrix{Float64}, C::Matrix{Float64},
@@ -369,20 +318,17 @@ function run_benchmark(kernel!, alpha::Float64, beta::Float64,
     copyto!(D, D_orig)
     allocs = @allocated kernel!(alpha, beta, A, B, tmp, C, D)
     
-    # Timed runs
+    # Timed iterations
     for _ in 1:iterations
         fill!(tmp, 0.0)
         copyto!(D, D_orig)
         t = @elapsed kernel!(alpha, beta, A, B, tmp, C, D)
-        push!(times, t * 1000)  # ms
+        push!(times, t * 1000)
     end
     
     return times, allocs
 end
 
-#=============================================================================
- Verification
-=============================================================================#
 function verify_result(D_ref::Matrix{Float64}, D_test::Matrix{Float64}, 
                        ni::Int, nj::Int, nk::Int, nl::Int)
     max_error = maximum(abs.(D_ref .- D_test))
@@ -391,11 +337,7 @@ function verify_result(D_ref::Matrix{Float64}, D_test::Matrix{Float64},
     return max_error, max_error < tolerance
 end
 
-#=============================================================================
- Main Function
-=============================================================================#
 function main()
-    # Argument parsing
     dataset = "MEDIUM"
     strategies_arg = "all"
     iterations = 10
@@ -432,7 +374,6 @@ function main()
         end
     end
     
-    # Get dataset parameters
     if !haskey(DATASET_SIZES, dataset)
         println("Unknown dataset: $dataset")
         println("Available: ", join(keys(DATASET_SIZES), ", "))
@@ -445,24 +386,20 @@ function main()
     mem_bytes = memory_bytes_2mm(ni, nj, nk, nl)
     nthreads = Threads.nthreads()
     
-    # Select strategies
     if strategies_arg == "all"
         strategies = STRATEGY_ORDER
     else
-        strategies = [strip(s) for s in split(strategies_arg, ",")]
+        strategies = [strip(String(s)) for s in split(strategies_arg, ",")]
     end
     
-    # Print header
+    # Header
     println("="^100)
-    println("2MM BENCHMARK")
+    println("2MM BENCHMARK - Julia $(VERSION)")
     println("="^100)
-    println("Julia version: $(VERSION)")
-    println("Threads: $nthreads")
-    println("BLAS threads: $(BLAS.get_num_threads())")
+    println("Threads: $nthreads | BLAS threads: $(BLAS.get_num_threads())")
     println("Dataset: $dataset (ni=$ni, nj=$nj, nk=$nk, nl=$nl)")
-    println("Memory: $(round(mem_bytes / 1024^2, digits=2)) MB")
-    println("FLOPs: $(round(flops / 1e9, digits=2)) GFLOP")
-    println("Warmup: $warmup, Iterations: $iterations")
+    println("Memory: $(round(mem_bytes / 1024^2, digits=2)) MB | FLOPs: $(round(flops / 1e9, digits=2)) GFLOP")
+    println("Warmup: $warmup | Iterations: $iterations")
     println("="^100)
     
     # Allocate arrays
@@ -476,20 +413,17 @@ function main()
     alpha = Ref(0.0)
     beta = Ref(0.0)
     
-    # Initialize
     init_2mm!(alpha, beta, A, B, tmp, C, D)
     copyto!(D_orig, D)
     
-    # Reference result (sequential)
+    # Reference result
     fill!(tmp, 0.0)
     copyto!(D, D_orig)
     kernel_2mm_seq!(alpha[], beta[], A, B, tmp, C, D)
     D_ref = copy(D)
     
-    # Results storage
     results = BenchmarkResult[]
     
-    # Run benchmarks
     for strategy in strategies
         kernel! = get_kernel(strategy)
         if kernel! === nothing
@@ -497,7 +431,6 @@ function main()
             continue
         end
         
-        # Special BLAS handling
         if strategy == "blas"
             configure_blas_threads(for_blas_benchmark=true)
         end
@@ -505,7 +438,6 @@ function main()
         times, allocs = run_benchmark(kernel!, alpha[], beta[], A, B, tmp, C, D, D_orig;
                                       warmup=warmup, iterations=iterations)
         
-        # Verify
         verified = true
         max_error = 0.0
         if do_verify
@@ -517,17 +449,16 @@ function main()
         
         push!(results, BenchmarkResult(strategy, times, verified, max_error, allocs))
         
-        # Restore BLAS config
         if strategy == "blas"
             configure_blas_threads()
         end
     end
     
-    # Find sequential baseline for speedup
+    # Find sequential baseline
     seq_result = findfirst(r -> r.strategy == "sequential", results)
     seq_min_time = seq_result !== nothing ? minimum(results[seq_result].times_ms) : nothing
     
-    # Print results table
+    # Print results
     println()
     println("="^100)
     @printf("%-18s | %10s | %10s | %10s | %10s | %8s | %8s | %8s\n",
@@ -544,7 +475,7 @@ function main()
         speedup = seq_min_time !== nothing ? seq_min_time / min_t : 1.0
         efficiency = compute_parallel_efficiency(r.strategy, speedup, nthreads)
         
-        eff_str = efficiency === nothing ? "    N/A" : @sprintf("%7.1f", efficiency)
+        eff_str = isnan(efficiency) ? "    N/A" : @sprintf("%7.1f", efficiency)
         status = r.verified ? "" : " [FAIL]"
         
         @printf("%-18s | %10.3f | %10.3f | %10.3f | %10.3f | %8.2f | %7.2fx | %s%s\n",
@@ -552,14 +483,16 @@ function main()
     end
     println("="^100)
     
-    # CSV output
+    # CSV output with explicit naming
     if output_csv
         timestamp = Dates.format(now(), "yyyymmdd_HHMMSS")
-        csv_path = "results/2mm_$(dataset)_$(timestamp).csv"
+        hostname = gethostname()
+        csv_filename = "2mm_$(dataset)_$(nthreads)T_$(hostname)_$(timestamp).csv"
+        csv_path = "results/$csv_filename"
         mkpath("results")
         
         open(csv_path, "w") do io
-            println(io, "benchmark,dataset,strategy,threads,is_parallel,min_ms,median_ms,mean_ms,std_ms,gflops,speedup,efficiency_pct,verified,max_error,allocations")
+            println(io, "benchmark,dataset,strategy,threads,hostname,is_parallel,min_ms,median_ms,mean_ms,std_ms,gflops,speedup,efficiency_pct,verified,max_error,allocations")
             
             for r in results
                 min_t = minimum(r.times_ms)
@@ -570,26 +503,24 @@ function main()
                 speedup = seq_min_time !== nothing ? seq_min_time / min_t : 1.0
                 efficiency = compute_parallel_efficiency(r.strategy, speedup, nthreads)
                 is_par = is_parallel_strategy(r.strategy)
-                eff_str = efficiency === nothing ? "" : @sprintf("%.2f", efficiency)
+                eff_str = isnan(efficiency) ? "" : @sprintf("%.2f", efficiency)
                 verified_str = r.verified ? "PASS" : "FAIL"
                 
-                @printf(io, "2mm,%s,%s,%d,%s,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%s,%s,%.2e,%d\n",
-                        dataset, r.strategy, nthreads, is_par,
+                @printf(io, "2mm,%s,%s,%d,%s,%s,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%s,%s,%.2e,%d\n",
+                        dataset, r.strategy, nthreads, hostname, is_par,
                         min_t, med_t, mean_t, std_t, gflops, speedup,
                         eff_str, verified_str, r.max_error, r.allocations)
             end
         end
-        println("\nCSV exported: $csv_path")
+        println("\nCSV: $csv_path")
     end
     
-    # Profiling (if requested)
+    # Profiling (optional, graceful fallback)
     if do_profile
-        println("\nGenerating flame graph profile...")
+        println("\nProfiling threads_static...")
         
-        # Profile threads_static (most common parallel strategy)
         kernel! = get_kernel("threads_static")
         
-        # Warmup
         for _ in 1:3
             fill!(tmp, 0.0)
             copyto!(D, D_orig)
@@ -603,32 +534,35 @@ function main()
             kernel!(alpha[], beta[], A, B, tmp, C, D)
         end
         
-        # Try to save as SVG if ProfileSVG is available
         timestamp = Dates.format(now(), "yyyymmdd_HHMMSS")
+        
+        # Try ProfileSVG (graceful fallback)
+        svg_saved = false
         try
             @eval using ProfileSVG
             svg_path = "results/flamegraph_2mm_$(dataset)_$(timestamp).svg"
-            ProfileSVG.save(svg_path)
-            println("Flame graph saved: $svg_path")
+            Base.invokelatest(ProfileSVG.save, svg_path)
+            println("Flame graph: $svg_path")
+            svg_saved = true
         catch e
-            # Fallback: print profile to console
-            println("ProfileSVG not available, printing profile summary:")
-            println("(Install with: using Pkg; Pkg.add(\"ProfileSVG\"))")
-            Profile.print(maxdepth=10, mincount=100)
-            
-            # Also save flat profile to file
-            flat_path = "results/profile_2mm_$(dataset)_$(timestamp).txt"
-            open(flat_path, "w") do io
+            # Expected if ProfileSVG not installed
+        end
+        
+        if !svg_saved
+            # Fallback: text profile
+            txt_path = "results/profile_2mm_$(dataset)_$(timestamp).txt"
+            open(txt_path, "w") do io
                 Profile.print(io, maxdepth=15)
             end
-            println("Profile text saved: $flat_path")
+            println("Text profile: $txt_path")
+            println("(Install ProfileSVG for flame graphs: using Pkg; Pkg.add(\"ProfileSVG\"))")
         end
     end
     
     println("\nLegend:")
     println("  Speedup = T_sequential / T_strategy")
-    println("  Eff(%) = (Speedup / Threads) * 100  [parallel strategies only]")
-    println("  N/A = Efficiency not applicable (non-parallel strategy)")
+    println("  Eff(%) = (Speedup / Threads) * 100  [parallel only, decreases with threads due to Amdahl's Law]")
+    println("  N/A = Non-parallel strategy (sequential, BLAS)")
 end
 
 main()
