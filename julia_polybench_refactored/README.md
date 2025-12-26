@@ -113,6 +113,58 @@ scancel -u $USER
 
 ### Extensive Command Lines for Heavy Jobs
 
+mkdir -p results
+
+for bench in 2mm 3mm cholesky correlation jacobi2d nussinov; do
+    sbatch --job-name="scale_${bench}" \
+           --output="results/scale_${bench}_%j.out" \
+           --error="results/scale_${bench}_%j.err" \
+           --time=00:30:00 \
+           -N 1 \
+           --ntasks=1 \
+           --cpus-per-task=16 \
+           --exclusive \
+           --partition=defq \
+           -C cpunode \
+           --wrap=". /etc/bashrc; . /etc/profile.d/lmod.sh; \
+                   module load prun julia/1.11.4; \
+                   export OPENBLAS_NUM_THREADS=1; \
+                   cd ~/Julia_versus_OpenMP/julia_polybench_refactored; \
+                   for t in 1 2 4 8 16; do \
+                       echo '=== Running with '\$t' threads ==='; \
+                       export JULIA_NUM_THREADS=\$t; \
+                       julia -t \$t scripts/run_${bench}.jl --dataset LARGE --output csv; \
+                   done; \
+                   echo '=== Scaling study complete for ${bench} ==='"
+done
+```
+
+## Key Changes
+
+| Change | Reason |
+|--------|--------|
+| `--exclusive` | No interference from other jobs during timing |
+| `-C cpunode` | Ensure CPU-only node |
+| `--time=00:30:00` | More buffer for 5 thread counts |
+| `--ntasks=1` | Explicit single process |
+| `echo` statements | Progress tracking in .out file |
+| Fixed path | Point to refactored code |
+| `results/` prefix | Organized output |
+
+## How It Works
+```
+Job 1 (scale_2mm) on Node A:
+  -> julia -t 1 run_2mm.jl ...   (sequential baseline)
+  -> julia -t 2 run_2mm.jl ...   
+  -> julia -t 4 run_2mm.jl ...   
+  -> julia -t 8 run_2mm.jl ...   
+  -> julia -t 16 run_2mm.jl ...  (full node)
+
+Job 2 (scale_3mm) on Node B:
+  -> [same pattern]
+  
+...6 jobs total, one per benchmark
+
 ```bash
 # Single benchmark, LARGE dataset, all strategies
 sbatch --job-name=2mm_L \
