@@ -35,7 +35,7 @@ function configure_blas_threads(;for_blas_benchmark::Bool=false)
     elseif Threads.nthreads() > 1
         BLAS.set_num_threads(1)
     else
-        BLAS.set_num_threads(min(4, Sys.CPU_THREADS))
+        BLAS.set_num_threads(min(8, Sys.CPU_THREADS))
     end
 end
 
