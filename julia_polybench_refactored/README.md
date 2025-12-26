@@ -113,32 +113,6 @@ scancel -u $USER
 
 ```
 
-## Key Changes
-
-| Change | Reason |
-|--------|--------|
-| `--exclusive` | No interference from other jobs during timing |
-| `-C cpunode` | Ensure CPU-only node |
-| `--time=00:30:00` | More buffer for 5 thread counts |
-| `--ntasks=1` | Explicit single process |
-| `echo` statements | Progress tracking in .out file |
-| Fixed path | Point to refactored code |
-| `results/` prefix | Organized output |
-
-## How It Works
-```
-Job 1 (scale_2mm) on Node A:
-  -> julia -t 1 run_2mm.jl ...   (sequential baseline)
-  -> julia -t 2 run_2mm.jl ...   
-  -> julia -t 4 run_2mm.jl ...   
-  -> julia -t 8 run_2mm.jl ...   
-  -> julia -t 16 run_2mm.jl ...  (full node)
-
-Job 2 (scale_3mm) on Node B:
-  -> [same pattern]
-  
-...6 jobs total, one per benchmark
-
 ```bash
 # Single benchmark, LARGE dataset, all strategies
 sbatch --job-name=2mm_L \
@@ -208,6 +182,34 @@ for bench in 2mm 3mm cholesky correlation jacobi2d nussinov; do
                    done; \
                    echo '=== Scaling study complete for ${bench} ==='"
 done
+
+
+## Key Changes
+
+| Change | Reason |
+|--------|--------|
+| `--exclusive` | No interference from other jobs during timing |
+| `-C cpunode` | Ensure CPU-only node |
+| `--time=00:30:00` | More buffer for 5 thread counts |
+| `--ntasks=1` | Explicit single process |
+| `echo` statements | Progress tracking in .out file |
+| Fixed path | Point to refactored code |
+| `results/` prefix | Organized output |
+
+## How It Works
+```
+Job 1 (scale_2mm) on Node A:
+  -> julia -t 1 run_2mm.jl ...   (sequential baseline)
+  -> julia -t 2 run_2mm.jl ...   
+  -> julia -t 4 run_2mm.jl ...   
+  -> julia -t 8 run_2mm.jl ...   
+  -> julia -t 16 run_2mm.jl ...  (full node)
+
+Job 2 (scale_3mm) on Node B:
+  -> [same pattern]
+  
+...6 jobs total, one per benchmark
+
 ```
 
 ## Flame Graph Profiling
