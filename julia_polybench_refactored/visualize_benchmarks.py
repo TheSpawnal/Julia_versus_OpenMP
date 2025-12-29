@@ -789,7 +789,7 @@ def create_julia_vs_openmp_comparison(df, output_path, title_prefix=""):
 # =============================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description='Julia PolyBench Visualization - Neon Cyberpunk Edition',
+        description='Julia PolyBench Visualization - Neon Edition',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
